@@ -1,7 +1,12 @@
 import { ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Role } from "../domain/constants";
 import { IdentityService } from "./identity.service";
 import { Roles, RolesGuard } from "./roles.guard";
+
+type IpRoleBindingRole = Extract<Role, "learner" | "content_admin">;
 
 describe("identity roles", () => {
   const originalEnv = process.env;
@@ -85,9 +90,17 @@ describe("identity roles", () => {
     expect(guard.canActivate(context(handler, { role: "content_admin" }))).toBe(true);
     expect(() => guard.canActivate(context(handler, { role: "learner" }))).toThrow(ForbiddenException);
   });
+
+  it("keeps Prisma IP role bindings narrower than application roles", () => {
+    const schema = readFileSync(resolve(__dirname, "../../prisma/schema.prisma"), "utf8");
+
+    expect(schema).toContain("role        IpRoleBindingRole");
+    expect(schema).toContain("enum IpRoleBindingRole");
+    expect(schema).toMatch(/enum IpRoleBindingRole\s+\{\s+learner\s+content_admin\s+\}/);
+  });
 });
 
-function prismaMock(input: { bindingRole: string | null }) {
+function prismaMock(input: { bindingRole: IpRoleBindingRole | null }) {
   return {
     ipRoleBinding: {
       findUnique: jest.fn().mockResolvedValue(input.bindingRole === null ? null : { role: input.bindingRole })

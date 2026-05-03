@@ -5,6 +5,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { normalizeIpv4, parseCsv } from "./ip-resolver";
 import { permissionsForRole, type Permission } from "./permissions";
 
+type IpRoleBindingRole = Extract<Role, "learner" | "content_admin">;
+
 export interface RequestIdentity {
   ip: string;
   role: Role;
@@ -38,7 +40,7 @@ export class IdentityService {
       select: { role: true }
     });
 
-    return binding?.role === "content_admin" || binding?.role === "learner" ? binding.role : "learner";
+    return binding === null ? "learner" : ipRoleBindingRoleToRole(binding.role);
   }
 
   private async upsertVisitor(ip: string): Promise<void> {
@@ -52,4 +54,8 @@ export class IdentityService {
   private systemAdminIps(): Set<string> {
     return new Set(parseCsv(process.env.SYSTEM_ADMIN_IPS).map(normalizeIpv4).filter((ip): ip is string => ip !== null));
   }
+}
+
+function ipRoleBindingRoleToRole(role: IpRoleBindingRole): Role {
+  return role;
 }
