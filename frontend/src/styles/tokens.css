@@ -1,0 +1,25 @@
+:root {
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --surface-alt: #f7f2ea;
+  --ink: #171927;
+  --muted: #667085;
+  --subtle: #8a92a6;
+  --border: #dfe4ef;
+  --line: #eef1f6;
+  --primary: #314ed8;
+  --primary-strong: #213184;
+  --blue: #2877c7;
+  --violet: #7257d6;
+  --amber: #c47b18;
+  --coral: #d5624b;
+  --danger: #bd3f3b;
+  --success: #475bd7;
+  --shadow: 0 18px 45px rgba(27, 33, 54, 0.1);
+  --radius: 8px;
+  --font: "Inter", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --sidebar-width: 284px;
+  --workspace-min: 920px;
+  --space-card: 22px;
+  --space-grid: 16px;
+}
