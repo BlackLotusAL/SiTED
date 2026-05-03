@@ -3,6 +3,10 @@ import { useState } from "react";
 
 type ExamState = "answering" | "confirming" | "review";
 
+const EXAM_TOTAL_QUESTIONS = 40;
+const EXAM_CURRENT_QUESTION = 5;
+const EXAM_PASS_SCORE = 60;
+
 const EXAM_QUESTION = {
   title: "以下哪些措施可以降低用户输入进入 SQL 查询时的安全风险？",
   sourceLabel: "科目三 / Python / 工作级",
@@ -16,9 +20,11 @@ const EXAM_QUESTION = {
 
 export function ExamPage() {
   const [selectedKeys, setSelectedKeys] = useState<string[]>(["A", "C"]);
-  const [flagged, setFlagged] = useState(false);
+  const [flaggedQuestions, setFlaggedQuestions] = useState<Set<number>>(() => new Set());
   const [examState, setExamState] = useState<ExamState>("answering");
   const [autosaveState, setAutosaveState] = useState("已自动保存 10:42");
+  const currentQuestion = EXAM_CURRENT_QUESTION;
+  const isCurrentFlagged = flaggedQuestions.has(currentQuestion);
 
   function toggleAnswer(key: string) {
     if (examState === "review") {
@@ -28,6 +34,20 @@ export function ExamPage() {
     setSelectedKeys((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
     setAutosaveState("正在自动保存...");
     window.setTimeout(() => setAutosaveState("已自动保存刚刚"), 250);
+  }
+
+  function toggleCurrentFlag() {
+    setFlaggedQuestions((current) => {
+      const next = new Set(current);
+
+      if (next.has(currentQuestion)) {
+        next.delete(currentQuestion);
+      } else {
+        next.add(currentQuestion);
+      }
+
+      return next;
+    });
   }
 
   return (
@@ -60,9 +80,9 @@ export function ExamPage() {
           })}
         </div>
         <div className="practice-actions">
-          <button className="secondary-button" type="button" onClick={() => setFlagged((current) => !current)} disabled={examState === "review"}>
+          <button className="secondary-button" type="button" onClick={toggleCurrentFlag} disabled={examState === "review"} aria-pressed={isCurrentFlagged}>
             <Flag aria-hidden="true" size={17} />
-            {flagged ? "取消疑问" : "标记疑问"}
+            {isCurrentFlagged ? "取消疑问" : "标记疑问"}
           </button>
           <button className="primary-button" type="button" onClick={() => setAutosaveState("已自动保存刚刚")} disabled={examState === "review"}>
             <Save aria-hidden="true" size={17} />
@@ -81,16 +101,20 @@ export function ExamPage() {
         <div className="panel-heading compact">
           <div>
             <h3>答题卡</h3>
-            <p>40 题 / 合格线 60%</p>
+            <p>
+              {EXAM_TOTAL_QUESTIONS} 题 / 合格线 {EXAM_PASS_SCORE}%
+            </p>
           </div>
         </div>
         <div className="sheet-grid" aria-label="答题卡">
-          {Array.from({ length: 20 }, (_, index) => {
+          {Array.from({ length: EXAM_TOTAL_QUESTIONS }, (_, index) => {
             const number = index + 1;
-            const className = number === 5 ? "current" : number === 4 && flagged ? "flagged" : number < 5 ? "done" : "";
+            const className = [number < currentQuestion ? "done" : "", number === currentQuestion ? "current" : "", flaggedQuestions.has(number) ? "flagged" : ""]
+              .filter(Boolean)
+              .join(" ");
 
             return (
-              <button className={className} type="button" key={number}>
+              <button className={className} type="button" aria-current={number === currentQuestion ? "step" : undefined} aria-pressed={flaggedQuestions.has(number)} key={number}>
                 {number}
               </button>
             );

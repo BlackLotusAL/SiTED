@@ -1211,4 +1211,33 @@ textarea:focus {
   .table-row.records {
     grid-template-columns: minmax(220px, 1fr) 120px 74px 120px 86px;
   }
+
+  .review-table {
+    overflow: visible;
+  }
+
+  .review-table .table-head,
+  .review-table .table-head.bookmarks,
+  .review-table .table-head.records {
+    display: none;
+  }
+
+  .review-table .table-row,
+  .review-table .table-row.bookmarks,
+  .review-table .table-row.records {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: start;
+    min-height: auto;
+    margin: 12px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #ffffff;
+  }
+
+  .review-table .operation-column {
+    justify-self: start;
+    text-align: left;
+  }
 }
