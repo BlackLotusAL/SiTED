@@ -1,6 +1,8 @@
 import type { ApiErrorBody, Identity } from "./types";
 
 type Fetcher = typeof fetch;
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type RequestBody = JsonValue | BodyInit;
 
 interface ApiClientOptions {
   baseUrl?: string;
@@ -19,9 +21,9 @@ export class ApiError extends Error {
 }
 
 export interface ApiClient {
-  get<T>(path: string, init?: RequestInit): Promise<T>;
-  post<TResponse, TBody = unknown>(path: string, body: TBody, init?: RequestInit): Promise<TResponse>;
-  patch<TResponse, TBody = unknown>(path: string, body: TBody, init?: RequestInit): Promise<TResponse>;
+  get<T>(path: string, init?: RequestInit): Promise<T | undefined>;
+  post<TResponse>(path: string, body: RequestBody, init?: RequestInit): Promise<TResponse | undefined>;
+  patch<TResponse>(path: string, body: RequestBody, init?: RequestInit): Promise<TResponse | undefined>;
   me(): Promise<Identity>;
 }
 
@@ -29,15 +31,22 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const baseUrl = options.baseUrl ?? "/api";
   const fetcher = options.fetcher ?? fetch;
 
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async function request<T>(path: string, init: RequestInit = {}): Promise<T | undefined> {
     const headers = new Headers(init.headers);
     headers.set("accept", "application/json");
 
-    if (init.body !== undefined && !headers.has("content-type")) {
+    if (init.body !== undefined && isJsonBody(init.body) && !headers.has("content-type")) {
       headers.set("content-type", "application/json");
     }
 
-    const response = await fetcher(toApiPath(baseUrl, path), { ...init, headers });
+    let response: Response;
+
+    try {
+      response = await fetcher(toApiPath(baseUrl, path), { ...init, headers });
+    } catch {
+      throw new ApiError("NETWORK_ERROR", "Network request failed", 0);
+    }
+
     const payload = await readJson(response);
 
     if (!response.ok) {
@@ -49,9 +58,17 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
   return {
     get: request,
-    post: (path, body, init) => request(path, { ...init, method: "POST", body: JSON.stringify(body) }),
-    patch: (path, body, init) => request(path, { ...init, method: "PATCH", body: JSON.stringify(body) }),
-    me: () => request<Identity>("/me")
+    post: (path, body, init) => request(path, { ...init, method: "POST", body: toRequestBody(body) }),
+    patch: (path, body, init) => request(path, { ...init, method: "PATCH", body: toRequestBody(body) }),
+    me: async () => {
+      const identity = await request<Identity>("/me");
+
+      if (identity === undefined) {
+        throw new ApiError("EMPTY_RESPONSE", "Identity response was empty", 0);
+      }
+
+      return identity;
+    }
   };
 }
 
@@ -71,14 +88,18 @@ function toApiPath(baseUrl: string, path: string): string {
 async function readJson(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
 
+  if (response.status === 204) {
+    return undefined;
+  }
+
   if (!contentType.includes("application/json")) {
-    return null;
+    return undefined;
   }
 
   try {
     return await response.json();
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -98,5 +119,27 @@ function isApiErrorBody(value: unknown): value is ApiErrorBody {
     "message" in value &&
     typeof value.code === "string" &&
     typeof value.message === "string"
+  );
+}
+
+function toRequestBody(body: RequestBody): BodyInit {
+  return isJsonBody(body) ? JSON.stringify(body) : body;
+}
+
+function isJsonBody(body: unknown): body is JsonValue {
+  return (
+    body === null ||
+    typeof body === "string" ||
+    typeof body === "number" ||
+    typeof body === "boolean" ||
+    Array.isArray(body) ||
+    (typeof body === "object" &&
+      body !== null &&
+      !(body instanceof FormData) &&
+      !(body instanceof Blob) &&
+      !(body instanceof ArrayBuffer) &&
+      !ArrayBuffer.isView(body) &&
+      !(body instanceof URLSearchParams) &&
+      !(body instanceof ReadableStream))
   );
 }

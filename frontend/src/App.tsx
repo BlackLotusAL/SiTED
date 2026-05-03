@@ -1,83 +1,33 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { PlaceholderPage } from "./components/PlaceholderPage";
+import type { Identity } from "./api/types";
 import { AppShell } from "./layout/AppShell";
+import { APP_ROUTES, pathToRoutePath } from "./routes/config";
+import { ProtectedRoute } from "./routes/ProtectedRoute";
 
-function App() {
+interface AppProps {
+  loadIdentity?: () => Promise<Identity>;
+}
+
+function App({ loadIdentity }: AppProps) {
   return (
     <Routes>
-      <Route path="/" element={<AppShell />}>
-        <Route
-          index
-          element={
-            <PlaceholderPage eyebrow="今日训练" title="训练工作台">
-              Task 8 frontend foundation is ready for learner and admin page implementations.
+      <Route path="/" element={<AppShell loadIdentity={loadIdentity} />}>
+        {APP_ROUTES.map((route) => {
+          const page = (
+            <PlaceholderPage eyebrow={route.eyebrow} title={route.title}>
+              {route.placeholder}
             </PlaceholderPage>
-          }
-        />
-        <Route
-          path="questions"
-          element={
-            <PlaceholderPage eyebrow="题库" title="题库浏览">
-              Browse, filter, and start practice from published questions in the next frontend task.
-            </PlaceholderPage>
-          }
-        />
-        <Route
-          path="practice"
-          element={
-            <PlaceholderPage eyebrow="练习" title="单题练习">
-              Practice flow placeholder for answer submission and immediate feedback.
-            </PlaceholderPage>
-          }
-        />
-        <Route
-          path="recite"
-          element={
-            <PlaceholderPage eyebrow="背诵" title="快速背诵">
-              Recite mode placeholder for fast question review.
-            </PlaceholderPage>
-          }
-        />
-        <Route
-          path="review"
-          element={
-            <PlaceholderPage eyebrow="复习" title="错题复习">
-              Review placeholder for mistakes, bookmarks, and recent practice history.
-            </PlaceholderPage>
-          }
-        />
-        <Route
-          path="exam"
-          element={
-            <PlaceholderPage eyebrow="模拟考" title="模拟考试">
-              Exam placeholder for paper selection, timed answering, and history.
-            </PlaceholderPage>
-          }
-        />
-        <Route
-          path="admin/questions"
-          element={
-            <PlaceholderPage eyebrow="管理" title="题目管理">
-              Admin question maintenance placeholder for Task 10.
-            </PlaceholderPage>
-          }
-        />
-        <Route
-          path="admin/stats"
-          element={
-            <PlaceholderPage eyebrow="管理" title="运营看板">
-              Admin statistics placeholder for Task 10.
-            </PlaceholderPage>
-          }
-        />
-        <Route
-          path="admin/settings"
-          element={
-            <PlaceholderPage eyebrow="管理" title="系统设置">
-              System settings placeholder for Task 10.
-            </PlaceholderPage>
-          }
-        />
+          );
+          const element =
+            route.minimumRole === undefined ? page : <ProtectedRoute route={route}>{page}</ProtectedRoute>;
+
+          return route.index ? (
+            <Route index element={element} key={route.path} />
+          ) : (
+            <Route path={pathToRoutePath(route.path)} element={element} key={route.path} />
+          );
+        })}
         <Route path="*" element={<Navigate replace to="/" />} />
       </Route>
     </Routes>
