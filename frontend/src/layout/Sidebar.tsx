@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
-import { BrandMark } from "../components/BrandMark";
 import type { Identity } from "../api/types";
+import { BrandMark } from "../components/BrandMark";
 import { APP_ROUTES, canAccessRoute, type AppRouteConfig } from "../routes/config";
 
 export interface SidebarProps {

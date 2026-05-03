@@ -1,7 +1,14 @@
+import type { ReactElement } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { PlaceholderPage } from "./components/PlaceholderPage";
 import type { Identity } from "./api/types";
 import { AppShell } from "./layout/AppShell";
+import { DashboardPage } from "./pages/DashboardPage";
+import { ExamPage } from "./pages/ExamPage";
+import { PracticePage } from "./pages/PracticePage";
+import { QuestionsPage } from "./pages/QuestionsPage";
+import { RecitePage } from "./pages/RecitePage";
+import { ReviewPage } from "./pages/ReviewPage";
 import { APP_ROUTES, pathToRoutePath } from "./routes/config";
 import { ProtectedRoute } from "./routes/ProtectedRoute";
 
@@ -14,7 +21,7 @@ function App({ loadIdentity }: AppProps) {
     <Routes>
       <Route path="/" element={<AppShell loadIdentity={loadIdentity} />}>
         {APP_ROUTES.map((route) => {
-          const page = (
+          const page = LEARNER_PAGES[route.path] ?? (
             <PlaceholderPage eyebrow={route.eyebrow} title={route.title}>
               {route.placeholder}
             </PlaceholderPage>
@@ -35,3 +42,12 @@ function App({ loadIdentity }: AppProps) {
 }
 
 export default App;
+
+const LEARNER_PAGES: Record<string, ReactElement> = {
+  "/": <DashboardPage />,
+  "/questions": <QuestionsPage />,
+  "/practice": <PracticePage />,
+  "/recite": <RecitePage />,
+  "/review": <ReviewPage />,
+  "/exam": <ExamPage />
+};
