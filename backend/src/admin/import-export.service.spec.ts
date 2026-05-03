@@ -55,15 +55,26 @@ describe("ImportExportService", () => {
     expect(report.errors).toEqual(expect.arrayContaining([expect.objectContaining({ row: 1, field: "sourceCode" })]));
   });
 
-  it("keeps import atomic and maps database unique races to conflict responses", async () => {
+  it("keeps import atomic and maps database unique races to row-level conflict responses", async () => {
     const prisma = prismaMock();
     const duplicateError = { code: "P2002", meta: { target: ["sourceCode"] } };
     prisma.question.create.mockRejectedValue(duplicateError);
+    prisma.question.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ sourceCode: "SRC-1" }]);
     const service = new ImportExportService(prisma as never);
 
-    await expect(service.commitImport({ version: "1.0", questions: [validImportQuestion()] }, { actorIp: "10.0.0.5", role: "content_admin" })).rejects.toThrow(
-      ConflictException
-    );
+    await expect(
+      service.commitImport(
+        { version: "1.0", questions: [validImportQuestion()] },
+        { actorIp: "10.0.0.5", role: "content_admin" }
+      )
+    ).rejects.toMatchObject({
+      constructor: ConflictException,
+      response: expect.objectContaining({
+        code: "IMPORT_SOURCE_CODE_CONFLICT",
+        conflicts: ["SRC-1"],
+        errors: [expect.objectContaining({ row: 1, field: "sourceCode", sourceCode: "SRC-1" })]
+      })
+    });
   });
 
   it("imports a valid batch atomically with correctAnswers derived from options", async () => {

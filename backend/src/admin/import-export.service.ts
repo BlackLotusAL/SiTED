@@ -89,6 +89,7 @@ export class ImportExportService {
 
     const batch = input as ImportBatch;
     const normalized = batch.questions.map((question) => normalizeQuestionInput(question));
+    const sourceRows = collectSourceRows(batch.questions);
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -114,9 +115,22 @@ export class ImportExportService {
       });
     } catch (error) {
       if (isPrismaErrorCode(error, "P2002")) {
+        const existingSourceCodes = await this.findExistingSourceCodes([...sourceRows.keys()]);
+        const conflicts = existingSourceCodes.size > 0 ? [...existingSourceCodes] : [...sourceRows.keys()];
+        const errors = conflicts.flatMap((sourceCode) =>
+          (sourceRows.get(sourceCode) ?? []).map((row) => ({
+            row,
+            field: "sourceCode",
+            sourceCode,
+            message: "sourceCode already exists"
+          }))
+        );
+
         throw new ConflictException({
-          code: "QUESTION_SOURCE_CODE_CONFLICT",
-          message: "Question sourceCode already exists"
+          code: "IMPORT_SOURCE_CODE_CONFLICT",
+          message: "Import sourceCode conflicts with existing questions",
+          conflicts,
+          errors
         });
       }
       throw error;
@@ -235,6 +249,17 @@ function sourceCodeOf(question: unknown): string | undefined {
   }
   const value = (question as { sourceCode?: unknown }).sourceCode;
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function collectSourceRows(questions: unknown[]): Map<string, number[]> {
+  const sourceRows = new Map<string, number[]>();
+  questions.forEach((question, index) => {
+    const sourceCode = sourceCodeOf(question);
+    if (sourceCode !== undefined) {
+      sourceRows.set(sourceCode, [...(sourceRows.get(sourceCode) ?? []), index + 1]);
+    }
+  });
+  return sourceRows;
 }
 
 function exportOptions(options: Prisma.JsonValue, correctAnswers: string[]) {
