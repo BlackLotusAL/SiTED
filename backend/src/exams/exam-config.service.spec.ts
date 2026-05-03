@@ -54,6 +54,37 @@ describe("ExamConfigService", () => {
     expect(() => new ExamConfigService()).toThrow(InternalServerErrorException);
   });
 
+  it("rejects duplicate subject blocks instead of silently overwriting them", () => {
+    const configPath = join(tempDir, "exam-paper-config.yaml");
+    writeFileSync(
+      configPath,
+      validYaml().replace(
+        "  security_privacy:",
+        ["  programming:", "    durationMinutes: 46", "    passScorePercent: 60", "    questionCounts:", "      judgment: 8", "      single: 22", "      multiple: 10", "  security_privacy:"].join(
+          "\n"
+        )
+      ),
+      "utf8"
+    );
+    process.env.EXAM_CONFIG_PATH = configPath;
+
+    expect(() => new ExamConfigService()).toThrow(InternalServerErrorException);
+  });
+
+  it("rejects values outside configured bounds", () => {
+    const configPath = join(tempDir, "exam-paper-config.yaml");
+    writeFileSync(
+      configPath,
+      validYaml()
+        .replace("    durationMinutes: 45", "    durationMinutes: 241")
+        .replace("      single: 22", "      single: 201"),
+      "utf8"
+    );
+    process.env.EXAM_CONFIG_PATH = configPath;
+
+    expect(() => new ExamConfigService()).toThrow(InternalServerErrorException);
+  });
+
   it("rejects unknown subjects when requesting a config", () => {
     const configPath = join(tempDir, "exam-paper-config.yaml");
     writeFileSync(configPath, validYaml(), "utf8");
