@@ -1,5 +1,8 @@
 import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { RoleBindingTable, type RoleBindingRow } from "../components/RoleBindingTable";
+
+const CLEAR_CONFIRMATION_PHRASE = "确认清空";
 
 const roleBindings: RoleBindingRow[] = [
   {
@@ -21,6 +24,9 @@ const roleBindings: RoleBindingRow[] = [
 ];
 
 export function AdminSettingsPage() {
+  const [confirmationPhrase, setConfirmationPhrase] = useState("");
+  const canStartClear = confirmationPhrase === CLEAR_CONFIRMATION_PHRASE;
+
   return (
     <div className="settings-layout">
       <section className="panel">
@@ -36,13 +42,19 @@ export function AdminSettingsPage() {
 
       <section className="panel danger-zone" aria-label="数据清空">
         <h2>数据清空</h2>
-        <p>清空操作需要输入确认短语，执行结果会写入审计日志。选择题库或全部范围时，会同步删除题库图片目录。</p>
+        <p>
+          清空操作需要输入确认短语“{CLEAR_CONFIRMATION_PHRASE}”，执行结果会写入审计日志。选择题库或全部范围时，会同步删除题库图片目录。
+        </p>
         <div className="danger-actions">
           <label>
             确认短语
-            <input placeholder="输入确认短语后继续" />
+            <input
+              onChange={(event) => setConfirmationPhrase(event.target.value)}
+              placeholder="输入确认短语后继续"
+              value={confirmationPhrase}
+            />
           </label>
-          <button className="danger-button" type="button">
+          <button className="danger-button" disabled={!canStartClear} type="button">
             <Trash2 aria-hidden="true" size={17} />
             进入清空流程
           </button>

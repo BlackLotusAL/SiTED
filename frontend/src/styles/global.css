@@ -1158,7 +1158,7 @@ textarea:focus {
 
 .editor-layout {
   display: grid;
-  grid-template-columns: minmax(760px, 1fr) 540px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.85fr);
   gap: 18px;
   margin-top: 18px;
 }
@@ -1493,11 +1493,16 @@ textarea:focus {
     filter 0.16s ease;
 }
 
-.chart-bar:hover,
-.chart-bar:focus {
+.chart-bar:hover {
   transform: translateY(-4px);
   filter: brightness(1.04);
-  outline: none;
+}
+
+.chart-bar:focus-visible {
+  transform: translateY(-4px);
+  filter: brightness(1.04);
+  outline: 3px solid rgba(49, 78, 216, 0.35);
+  outline-offset: 3px;
 }
 
 .chart-bar.blue {
@@ -1563,6 +1568,16 @@ textarea:focus {
 
 .role-binding-table th:nth-child(5) {
   width: 15%;
+}
+
+.role-binding-table tbody th {
+  border-bottom: 1px solid var(--line);
+  padding: 14px 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 850;
+  text-align: left;
+  vertical-align: middle;
 }
 
 .permission-list {

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AdminSettingsPage } from "./AdminSettingsPage";
 
@@ -29,8 +29,27 @@ describe("AdminSettingsPage", () => {
     expect(within(roleTable).getByText("系统管理员")).toBeInTheDocument();
     expect(within(roleTable).getByText("题库管理员")).toBeInTheDocument();
     expect(within(roleTable).queryByText("system_admin")).not.toBeInTheDocument();
+    expect(within(roleTable).getAllByRole("rowheader").map((header) => header.textContent)).toEqual([
+      "10.42.18.36",
+      "10.42.20.17"
+    ]);
     expect(within(roleTable).getByText("题目新增")).toBeInTheDocument();
     expect(within(roleTable).getByText("运营看板只读")).toBeInTheDocument();
     expect(within(roleTable).getByText("审计日志查看")).toBeInTheDocument();
+  });
+
+  it("requires the confirmation phrase before enabling the data clear action", () => {
+    render(<AdminSettingsPage />);
+
+    const dangerZone = screen.getByRole("region", { name: "数据清空" });
+    const clearButton = within(dangerZone).getByRole("button", { name: /进入清空流程/ });
+
+    expect(clearButton).toBeDisabled();
+
+    fireEvent.change(within(dangerZone).getByRole("textbox"), { target: { value: "wrong phrase" } });
+    expect(clearButton).toBeDisabled();
+
+    fireEvent.change(within(dangerZone).getByRole("textbox"), { target: { value: "确认清空" } });
+    expect(clearButton).toBeEnabled();
   });
 });

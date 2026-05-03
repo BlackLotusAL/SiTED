@@ -28,9 +28,9 @@ export function RoleBindingTable({ rows }: RoleBindingTableProps) {
       <tbody>
         {rows.map((row) => (
           <tr key={row.ip}>
-            <td>
+            <th scope="row">
               <strong>{row.ip}</strong>
-            </td>
+            </th>
             <td>{row.roleLabel}</td>
             <td>
               <div className="permission-list">
