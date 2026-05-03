@@ -1,2 +1,281 @@
-# SiTED
-Silicon Trusted Engineering Dojo
+<div align="center">
+
+# 🥋 SiTED
+
+### Silicon Trusted Engineering Dojo
+
+**面向公司内部研发人员的可信专业认证训练平台**
+
+零摩擦接入 · IP 即身份 · 刷题复习闭环 · 题库管理
+
+[![Backend Tests](https://img.shields.io/badge/backend%20tests-131%20passing-success)](backend/src)
+[![Frontend Tests](https://img.shields.io/badge/frontend%20tests-31%20passing-success)](frontend/src)
+[![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](#-许可证)
+
+[📜 产品概览](#-产品概览) ·
+[✨ 核心功能](#-核心功能) ·
+[🚀 快速开始](#-快速开始) ·
+[⚙️ 配置说明](#%EF%B8%8F-配置说明) ·
+[📖 相关文档](#-相关文档)
+
+</div>
+
+<div align="center">
+  <img src="docs/images/sited-overview-preview.png" alt="SiTED 网页示例图" width="92%" />
+</div>
+
+---
+
+## 📜 产品概览
+
+**SiTED** 是一个面向公司内部研发人员的可信工程刷题训练平台，聚焦 TPC 认证相关的三类题库：编程知识、安全质量隐私、重构知识。
+
+用户打开内网站点即可开始训练，无需注册、无需登录。系统根据访问 IP 自动识别身份和权限，学习者可以直接进入题库、练习、背诵、复习和模拟考试；管理员可以维护题目、查看运营数据和管理 IP 角色绑定。
+
+| 科目 | 主题 | 语言区分 | 级别 |
+| :---: | --- | :---: | --- |
+| 科目二 | 编程知识 | 是 | 入门级 / 工作级 / 专业级 |
+| 科目三 | 安全质量隐私 | 是 | 工作级 / 专业级 |
+| 科目四 | 重构知识 | 否 | 专业级 |
+
+## ✨ 核心功能
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🎯 刷题、巩固、检验主链路
+
+- 题库浏览：按科目、语言、级别、题型、标签和关键词筛选。
+- 单题练习：提交答案后立即反馈，并展示解析。
+- 快速背诵：题干、答案和解析同屏查看。
+- 错题复习：沉淀未掌握题目，辅助集中复习。
+- 收藏题目：保留重点题目，方便后续回看。
+- 模拟考试：组卷、答题卡、自动保存、交卷和复盘一体化。
+
+</td>
+<td width="50%" valign="top">
+
+### 🔐 IP 身份与固定角色
+
+- 请求 IP 即身份，无账号密码登录摩擦。
+- `ALLOWED_CIDR` 控制允许访问的内网范围。
+- `SYSTEM_ADMIN_IPS` 指定系统管理员。
+- 学习者、题库管理员、系统管理员三类固定角色。
+- IP 角色绑定只负责学习者和题库管理员。
+- 高风险操作写入审计记录。
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 📦 题库管理
+
+- 新增、编辑、发布和归档题目。
+- 支持单选题、多选题和判断题。
+- 题干和解析支持 Markdown 与代码块。
+- 题目预览与编辑内容联动。
+- 支持同源图片上传和引用。
+- 支持题库导入、导出和校验反馈。
+
+</td>
+<td width="50%" valign="top">
+
+### 📊 后台管理
+
+- 运营看板展示题库分布和训练趋势。
+- 查看低正确率题目，辅助题库质量治理。
+- 管理固定 IP 与角色绑定关系。
+- 查看访问用户、训练记录和考试记录。
+- 数据清理等敏感操作带确认和审计。
+- 管理入口按角色自动展示。
+
+</td>
+</tr>
+</table>
+
+### 🎨 界面体验亮点
+
+- 默认浅色主题，强调桌面端高频训练效率。
+- 左侧固定导航，学习入口和管理入口分区清晰。
+- 首页展示今日训练、训练日历、核心指标和推荐工作流。
+- 题库页提供筛选、列表和题目预览的并排布局。
+- 练习页提供选项状态、提交反馈、解析和下一题流转。
+- 模拟考提供答题卡、标记疑问、自动保存和交卷确认。
+- 题目管理页提供 Markdown 编辑、选项录入和实时预览。
+
+## 🔁 训练闭环
+
+<img src="docs/images/sited-training-loop.png" alt="SiTED 训练闭环示意图" width="100%" />
+
+1. 用户打开内网站点，系统按 IP 自动识别身份。
+2. 用户按科目、语言、级别、题型、标签和关键词筛选题目。
+3. 用户进入练习、背诵或模拟考试。
+4. 系统记录作答、错题、收藏和考试快照。
+5. 管理员维护题库、查看统计、管理角色绑定和审计日志。
+
+## 🪪 角色与权限
+
+| 角色 | 获得方式 | 能力 |
+| --- | --- | --- |
+| 学习者 | 命中允许访问网段后的默认角色 | 浏览题库、练习、背诵、复习、收藏、模拟考 |
+| 题库管理员 | 系统管理员按 IP 绑定 | 学习者能力，加上题目维护、导入导出和运营统计 |
+| 系统管理员 | 通过 `SYSTEM_ADMIN_IPS` 环境变量指定 | 题库管理员能力，加上 IP 角色绑定、数据清理和审计查看 |
+
+系统只提供固定角色，不提供复杂组织架构、积分排名、徽章证书或自定义权限组合。
+
+## 🚀 快速开始
+
+### 环境要求
+
+| 工具 | 版本 |
+| --- | --- |
+| Node.js | 22 或更高版本 |
+| npm | 随 Node.js 安装 |
+| Docker Desktop | 支持 Docker Compose |
+| PostgreSQL | 本地开发由 `docker-compose.yml` 提供 |
+
+### 本地启动
+
+在仓库根目录执行：
+
+```powershell
+npm install
+docker compose up -d db
+npm run db:migrate
+npm run db:seed
+npm run dev
+```
+
+启动后访问：
+
+- 前端页面：`http://127.0.0.1:5173`
+- 后端服务：`http://127.0.0.1:3000`
+- 接口前缀：`http://127.0.0.1:3000/api/*`
+
+在 Windows 上，如果 Prisma 无法通过 `localhost` 连接数据库，请在 `DATABASE_URL` 中使用 `127.0.0.1`。
+
+## ⚙️ 配置说明
+
+需要自定义本地配置时，可以从这些示例文件复制：
+
+- `.env.example`
+- `backend/.env.example`
+- `frontend/.env.example`
+
+关键后端配置：
+
+```env
+DATABASE_URL=postgresql://sited:sited_dev_password@127.0.0.1:5432/sited?schema=public
+ALLOWED_CIDR=10.0.0.0/8,127.0.0.1/32
+TRUSTED_PROXY_CIDRS=127.0.0.1/32
+SYSTEM_ADMIN_IPS=127.0.0.1,10.42.18.36
+UPLOAD_ROOT=backend/uploads
+EXAM_CONFIG_PATH=backend/config/exam-paper-config.yaml
+```
+
+角色解析规则：
+
+- `SYSTEM_ADMIN_IPS` 中的 IP 始终解析为系统管理员。
+- IP 角色绑定只能指定学习者或题库管理员。
+- 系统管理员只能来自 `SYSTEM_ADMIN_IPS`，不能通过页面绑定出来。
+- 命中允许网段但没有绑定角色的访问者默认为学习者。
+- 未命中 `ALLOWED_CIDR` 的请求会返回 `403`。
+
+## 🧰 常用命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `npm run dev` | 同时启动后端和前端 |
+| `npm run build` | 构建所有工作区 |
+| `npm run db:migrate` | 执行 Prisma 数据库迁移 |
+| `npm run db:seed` | 写入确定性的本地开发数据 |
+
+种子数据会创建确定性的 `SITED-SEED*` 题目、访问者、角色绑定、训练记录、考试记录和审计日志。重复执行种子脚本会更新种子脚本拥有的数据，不会清空无关的本地数据。
+
+## 🛠️ 技术栈
+
+<table width="100%" cellspacing="16">
+<tr>
+<td valign="top" width="50%">
+
+<div align="center"><strong>前端</strong></div>
+
+<ul>
+  <li>⚛️ <a href="https://react.dev/"><strong>React 19</strong></a> · 训练工作台与交互页面</li>
+  <li>⚡ <a href="https://vite.dev/"><strong>Vite 6</strong></a> · 前端开发服务器与构建工具</li>
+  <li>🛣️ <a href="https://reactrouter.com/"><strong>React Router 7</strong></a> · 页面路由与权限入口</li>
+  <li>🔷 <a href="https://www.typescriptlang.org/"><strong>TypeScript 5</strong></a> · 类型约束与前后端契约</li>
+  <li>🎛️ <a href="https://lucide.dev/"><strong>lucide-react</strong></a> · 统一线性图标系统</li>
+  <li>🧪 <a href="https://vitest.dev/"><strong>Vitest</strong></a> · 前端单元与组件测试</li>
+  <li>🎭 <a href="https://playwright.dev/"><strong>Playwright</strong></a> · 端到端冒烟检查</li>
+</ul>
+
+</td>
+<td valign="top" width="50%">
+
+<div align="center"><strong>后端</strong></div>
+
+<ul>
+  <li>🔥 <a href="https://nestjs.com/"><strong>NestJS 11</strong></a> · API 服务</li>
+  <li>🐘 <a href="https://www.prisma.io/"><strong>Prisma 6</strong></a> · 类型安全 ORM 与迁移</li>
+  <li>🗄️ <a href="https://www.postgresql.org/"><strong>PostgreSQL 16</strong></a> · 业务数据存储</li>
+  <li>🔷 <a href="https://www.typescriptlang.org/"><strong>TypeScript 5</strong></a> · 服务端领域模型约束</li>
+  <li>✅ <a href="https://jestjs.io/"><strong>Jest</strong></a> · 后端单元与集成测试</li>
+  <li>📝 <a href="https://github.com/markdown-it/markdown-it"><strong>markdown-it</strong></a> · Markdown 渲染</li>
+  <li>🧹 <a href="https://github.com/apostrophecms/sanitize-html"><strong>sanitize-html</strong></a> · HTML 清洗</li>
+</ul>
+
+</td>
+</tr>
+</table>
+
+## 📂 项目结构
+
+```text
+SiTED/
+├── backend/                 # 后端接口、Prisma 模型、迁移和种子数据
+│   ├── prisma/              # 数据模型、迁移和 seed 脚本
+│   └── src/                 # NestJS 模块、控制器和服务
+├── frontend/                # 前端应用、页面组件和端到端检查
+│   └── src/                 # 路由、页面、组件、接口封装和样式
+├── docs/                    # 产品文档、开发计划和 README 图片
+├── ui-prototype/            # 静态界面原型
+├── docker-compose.yml       # 本地 PostgreSQL 服务
+└── package.json             # 工作区脚本
+```
+
+## 📖 相关文档
+
+| 文档 | 说明 |
+| --- | --- |
+| [📐 产品需求文档](docs/superpowers/specs/2026-05-03-prd.md) | 产品目标、角色权限、题库规则、业务流程和页面范围 |
+| [📋 开发计划](docs/superpowers/plans/2026-05-03-p0-development-plan.md) | P0 版本的任务拆解、实现路径和验证要求 |
+
+## 🔒 安全说明
+
+- 通过 `ALLOWED_CIDR` 限制可访问网段。
+- 只信任 `TRUSTED_PROXY_CIDRS` 中代理传入的真实 IP。
+- 系统管理员身份只能由 `SYSTEM_ADMIN_IPS` 指定。
+- Markdown 内容由后端清洗后返回。
+- 题目图片只允许同源 `/uploads/...` 地址。
+- 管理员和高风险操作写入审计日志。
+
+如发现安全问题，请不要公开提交 Issue，请通过内部渠道联系平台负责人。
+
+## 🤝 参与贡献
+
+欢迎以下形式的贡献：
+
+- 提交问题：说明复现步骤、期望行为和实际行为。
+- 提交需求：说明目标用户、使用场景和预期收益。
+- 提交改动：保持单次改动聚焦，涉及用户可见行为时同步更新文档。
+
+## 📄 许可证
+
+SiTED 使用 [MIT 许可证](LICENSE)。
