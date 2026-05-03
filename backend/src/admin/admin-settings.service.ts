@@ -80,26 +80,33 @@ export class AdminSettingsService {
   async upsertRoleBinding(input: unknown, actor: AuditActor) {
     const normalized = normalizeRoleBindingInput(input);
     rejectEnvSystemAdminIp(normalized.ip);
-    const binding = await this.prisma.ipRoleBinding.upsert({
-      where: { ip: normalized.ip },
-      create: {
-        ip: normalized.ip,
-        role: normalized.role,
-        note: normalized.description,
-        updatedByIp: actor.ip
-      },
-      update: {
-        role: normalized.role,
-        note: normalized.description,
-        updatedByIp: actor.ip
-      }
-    });
+    const binding = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.ipRoleBinding.upsert({
+        where: { ip: normalized.ip },
+        create: {
+          ip: normalized.ip,
+          role: normalized.role,
+          note: normalized.description,
+          updatedByIp: actor.ip
+        },
+        update: {
+          role: normalized.role,
+          note: normalized.description,
+          updatedByIp: actor.ip
+        }
+      });
 
-    await this.audit.record({
-      actor,
-      action: "ip_role_upsert",
-      target: normalized.ip,
-      detail: { role: normalized.role, description: normalized.description, result: "success" }
+      await this.audit.record(
+        {
+          actor,
+          action: "ip_role_upsert",
+          target: normalized.ip,
+          detail: { role: normalized.role, description: normalized.description, result: "success" }
+        },
+        tx
+      );
+
+      return saved;
     });
 
     return roleBindingItem({
@@ -113,12 +120,17 @@ export class AdminSettingsService {
   async deleteRoleBinding(ipInput: string, actor: AuditActor) {
     const ip = normalizeIp(ipInput);
     rejectEnvSystemAdminIp(ip);
-    await this.prisma.ipRoleBinding.deleteMany({ where: { ip } });
-    await this.audit.record({
-      actor,
-      action: "ip_role_delete",
-      target: ip,
-      detail: { result: "success" }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.ipRoleBinding.deleteMany({ where: { ip } });
+      await this.audit.record(
+        {
+          actor,
+          action: "ip_role_delete",
+          target: ip,
+          detail: { result: "success" }
+        },
+        tx
+      );
     });
     return { deleted: true };
   }
@@ -153,7 +165,26 @@ export class AdminSettingsService {
       });
     }
 
-    let dbDetail: Record<string, unknown>;
+    let fileDetail: Record<string, unknown> = {};
+    let result = "success";
+    if (normalized.scope === "questions" || normalized.scope === "all") {
+      try {
+        await this.removeUploads();
+        fileDetail = { fileResult: "success" };
+      } catch (error) {
+        result = "partial_success";
+        fileDetail = { fileResult: "failed", fileError: errorMessage(error) };
+      }
+    }
+
+    const dbDetail = {
+      dbResult: "success",
+      ...(normalized.scope === "questions"
+        ? { deletedQuestionBoundRecords: ["bookmarks", "mistakes", "practiceAttempts"] }
+        : {})
+    };
+    const detail = { scope: normalized.scope, result, ...dbDetail, ...fileDetail };
+
     try {
       await this.prisma.$transaction(async (tx) => {
         if (normalized.scope === "activity" || normalized.scope === "all") {
@@ -167,13 +198,16 @@ export class AdminSettingsService {
           await tx.question.deleteMany();
           await tx.ipRoleBinding.deleteMany();
         }
+        await this.audit.record(
+          {
+            actor,
+            action: "data_clear",
+            target: normalized.scope,
+            detail
+          },
+          tx
+        );
       });
-      dbDetail = {
-        dbResult: "success",
-        ...(normalized.scope === "questions"
-          ? { deletedQuestionBoundRecords: ["bookmarks", "mistakes", "practiceAttempts"] }
-          : {})
-      };
     } catch (error) {
       await this.audit.record({
         actor,
@@ -183,26 +217,6 @@ export class AdminSettingsService {
       });
       throw error;
     }
-
-    let fileDetail: Record<string, unknown> = {};
-    let result = "success";
-    if (normalized.scope === "questions" || normalized.scope === "all") {
-      try {
-        await this.removeUploads();
-        fileDetail = { fileResult: "success" };
-      } catch (error) {
-        result = "partial_success";
-        fileDetail = { fileResult: "failed", fileError: errorMessage(error) };
-      }
-    }
-
-    const detail = { scope: normalized.scope, result, ...dbDetail, ...fileDetail };
-    await this.audit.record({
-      actor,
-      action: "data_clear",
-      target: normalized.scope,
-      detail
-    });
 
     return detail;
   }
@@ -284,9 +298,13 @@ function isPathInside(candidate: string, root: string): boolean {
 }
 
 function systemAdminIpList(): string[] {
-  return parseCsv(process.env.SYSTEM_ADMIN_IPS)
-    .map(normalizeIpv4)
-    .filter((ip): ip is string => ip !== null);
+  return [
+    ...new Set(
+      parseCsv(process.env.SYSTEM_ADMIN_IPS)
+        .map(normalizeIpv4)
+        .filter((ip): ip is string => ip !== null)
+    )
+  ];
 }
 
 function rejectEnvSystemAdminIp(ip: string): void {

@@ -20,7 +20,7 @@ describe("AdminSettingsService", () => {
   });
 
   it("lists IP role bindings with readable role labels, concrete permission names, table headers, and system admins from env only", async () => {
-    process.env.SYSTEM_ADMIN_IPS = "10.0.0.1,10.0.0.8";
+    process.env.SYSTEM_ADMIN_IPS = "10.0.0.1,10.0.0.8,10.0.0.8";
     const prisma = prismaMock();
     prisma.ipRoleBinding.findMany.mockResolvedValue([
       {
@@ -70,6 +70,7 @@ describe("AdminSettingsService", () => {
     );
 
     expect(result).toMatchObject({ ip: "10.0.0.9", fixedRole: "Content admin" });
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
     expect(prisma.ipRoleBinding.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { ip: "10.0.0.9" },
@@ -85,6 +86,25 @@ describe("AdminSettingsService", () => {
         target: "10.0.0.9",
         detail: expect.objectContaining({ role: "content_admin", result: "success" })
       })
+    });
+  });
+
+  it("rolls back role binding upsert when audit creation fails inside the transaction", async () => {
+    const prisma = prismaMock();
+    prisma.auditLog.create.mockRejectedValueOnce(new Error("audit down"));
+    const service = new AdminSettingsService(prisma as never);
+
+    await expect(
+      service.upsertRoleBinding(
+        { ip: "10.0.0.9", role: "content_admin", description: "Maintainer" },
+        { ip: "10.0.0.1", role: "system_admin" }
+      )
+    ).rejects.toThrow("audit down");
+
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+    expect(prisma.ipRoleBinding.upsert).toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: "ip_role_upsert", target: "10.0.0.9" })
     });
   });
 
@@ -114,6 +134,7 @@ describe("AdminSettingsService", () => {
     const result = await service.deleteRoleBinding("10.0.0.9", { ip: "10.0.0.1", role: "system_admin" });
 
     expect(result).toEqual({ deleted: true });
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
     expect(prisma.ipRoleBinding.deleteMany).toHaveBeenCalledWith({ where: { ip: "10.0.0.9" } });
     expect(prisma.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -123,6 +144,22 @@ describe("AdminSettingsService", () => {
         target: "10.0.0.9",
         detail: { result: "success" }
       })
+    });
+  });
+
+  it("rolls back role binding delete when audit creation fails inside the transaction", async () => {
+    const prisma = prismaMock();
+    prisma.auditLog.create.mockRejectedValueOnce(new Error("audit down"));
+    const service = new AdminSettingsService(prisma as never);
+
+    await expect(service.deleteRoleBinding("10.0.0.9", { ip: "10.0.0.1", role: "system_admin" })).rejects.toThrow(
+      "audit down"
+    );
+
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+    expect(prisma.ipRoleBinding.deleteMany).toHaveBeenCalledWith({ where: { ip: "10.0.0.9" } });
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: "ip_role_delete", target: "10.0.0.9" })
     });
   });
 
@@ -238,6 +275,29 @@ describe("AdminSettingsService", () => {
           fileResult: "failed",
           fileError: "delete failed"
         })
+      })
+    });
+  });
+
+  it("does not clear data when audit creation fails inside the clear transaction", async () => {
+    const prisma = prismaMock();
+    prisma.auditLog.create.mockRejectedValueOnce(new Error("audit down"));
+    const service = new AdminSettingsService(prisma as never);
+
+    await expect(
+      service.clearData(
+        { scope: "activity", confirmationPhrase: DATA_CLEAR_CONFIRMATION_PHRASE },
+        { ip: "10.0.0.1", role: "system_admin" }
+      )
+    ).rejects.toThrow("audit down");
+
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+    expect(prisma.examAttempt.deleteMany).toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "data_clear",
+        target: "activity",
+        detail: expect.objectContaining({ scope: "activity", result: "success", dbResult: "success" })
       })
     });
   });
