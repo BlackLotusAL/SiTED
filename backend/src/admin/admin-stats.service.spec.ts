@@ -67,6 +67,7 @@ describe("AdminStatsService", () => {
 
     const trendSql = prisma.$queryRaw.mock.calls[1][0].sql as string;
     expect(trendSql).toContain("Asia/Hong_Kong");
+    expect(trendSql).toContain("AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Hong_Kong'");
     expect(trendSql).toContain("date_trunc");
     expect(prisma.visitor.count).toHaveBeenCalledWith({
       where: {
@@ -77,6 +78,25 @@ describe("AdminStatsService", () => {
       }
     });
     expect(prisma.visitor.groupBy).not.toHaveBeenCalled();
+  });
+
+  it("preserves exact database low-rate ordering when displayed rounded percentages tie", async () => {
+    const prisma = prismaMock();
+    prisma.$queryRaw.mockReset();
+    prisma.$queryRaw
+      .mockResolvedValueOnce([
+        questionRecord({ id: "q-exact-lower", totalAttempts: 100, correctAttempts: 33 }),
+        questionRecord({ id: "q-rounded-tie", totalAttempts: 1000, correctAttempts: 334 })
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const service = new AdminStatsService(prisma as never, () => new Date("2026-05-03T12:00:00.000Z"));
+
+    const stats = await service.getStats();
+
+    expect(stats.lowCorrectRateQuestions.map((question) => question.id)).toEqual(["q-exact-lower", "q-rounded-tie"]);
+    expect(stats.lowCorrectRateQuestions.map((question) => question.correctRate)).toEqual([33, 33]);
   });
 });
 

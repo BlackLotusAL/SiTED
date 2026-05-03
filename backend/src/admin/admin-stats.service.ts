@@ -70,9 +70,7 @@ export class AdminStatsService {
           totalAttempts: question.totalAttempts,
           correctAttempts: question.correctAttempts,
           correctRate: correctRate(question)
-        }))
-        .sort((left, right) => left.correctRate - right.correctRate || right.totalAttempts - left.totalAttempts)
-        .slice(0, 10),
+        })),
       today: {
         visitors: todayVisitors,
         practiceQuestions: todayPracticeQuestions,
@@ -111,7 +109,13 @@ export class AdminStatsService {
   private trendRows(table: "Visitor" | "PracticeAttempt" | "ExamAttempt", field: "lastSeenAt" | "createdAt" | "startedAt", start: Date, end: Date) {
     return this.prisma.$queryRaw<TrendRow[]>(Prisma.sql`
       SELECT
-        to_char(date_trunc('day', ${Prisma.raw(`"${field}"`)} AT TIME ZONE ${Prisma.raw(`'${BUSINESS_TIME_ZONE}'`)}), 'YYYY-MM-DD') AS date,
+        to_char(
+          date_trunc(
+            'day',
+            (${Prisma.raw(`"${field}"`)} AT TIME ZONE 'UTC') AT TIME ZONE ${Prisma.raw(`'${BUSINESS_TIME_ZONE}'`)}
+          ),
+          'YYYY-MM-DD'
+        ) AS date,
         COUNT(*)::int AS count
       FROM ${Prisma.raw(`"${table}"`)}
       WHERE ${Prisma.raw(`"${field}"`)} >= ${start} AND ${Prisma.raw(`"${field}"`)} < ${end}
