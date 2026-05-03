@@ -20,7 +20,6 @@ export class BookmarksService {
   }
 
   async remove(questionId: string, identity: RequestIdentity) {
-    await this.ensurePublishedQuestion(questionId);
     const visitor = await this.requireVisitor(identity);
 
     const result = await this.prisma.bookmark.deleteMany({ where: { visitorId: visitor.id, questionId } });
