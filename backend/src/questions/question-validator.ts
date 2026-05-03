@@ -101,8 +101,18 @@ export function validateQuestionInput(input: unknown, defaultStatus: QuestionSta
     errors.push({ field: "memo", message: `memo must be at most ${MEMO_MAX} characters` });
   }
 
+  if (!isValidTagsInput(question.tags)) {
+    errors.push({ field: "tags", message: "tags must be an array of strings" });
+  }
+
   if (normalized.tags.length > TAG_COUNT_MAX || normalized.tags.some((tag) => tag.length > TAG_MAX)) {
     errors.push({ field: "tags", message: `tags must be at most ${TAG_COUNT_MAX} items and ${TAG_MAX} characters each` });
+  }
+
+  if (!Array.isArray(question.options)) {
+    errors.push({ field: "options", message: "options must be an array" });
+  } else if (!question.options.every(isOptionObject)) {
+    errors.push({ field: "options", message: "each option must be an object with key, text, and isCorrect fields" });
   }
 
   if (normalized.options.some((option) => option.text.length === 0 || option.text.length > OPTION_TEXT_MAX)) {
@@ -127,11 +137,16 @@ function buildNormalizedQuestion(
   defaultStatus: QuestionStatus
 ): NormalizedQuestionInput {
   const options = Array.isArray(input.options)
-    ? input.options.map((option) => ({
-        key: typeof option.key === "string" ? option.key.trim() : "",
-        text: typeof option.text === "string" ? option.text.trim() : "",
-        isCorrect: option.isCorrect === true
-      }))
+    ? input.options.map((option) => {
+        if (!isOptionObject(option)) {
+          return { key: "", text: "", isCorrect: false };
+        }
+        return {
+          key: typeof option.key === "string" ? option.key.trim() : "",
+          text: typeof option.text === "string" ? option.text.trim() : "",
+          isCorrect: option.isCorrect === true
+        };
+      })
     : [];
   const derivedAnswers = options.filter((option) => option.isCorrect).map((option) => option.key);
   const correctAnswers = Array.isArray(input.correctAnswers)
@@ -152,6 +167,14 @@ function buildNormalizedQuestion(
     memo: optionalTrim(input.memo),
     status: (input.status ?? defaultStatus) as QuestionStatus
   };
+}
+
+function isValidTagsInput(tags: unknown): boolean {
+  return tags === undefined || (Array.isArray(tags) && tags.every((tag) => typeof tag === "string"));
+}
+
+function isOptionObject(option: unknown): option is Partial<QuestionOptionInput> {
+  return typeof option === "object" && option !== null && !Array.isArray(option);
 }
 
 export function normalizeTags(tags: unknown): string[] {
