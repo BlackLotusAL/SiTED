@@ -1,11 +1,11 @@
-import { Controller, Delete, InternalServerErrorException, Param, ParseUUIDPipe, Post, Req } from "@nestjs/common";
+import { Controller, Delete, Inject, InternalServerErrorException, Param, ParseUUIDPipe, Post, Req } from "@nestjs/common";
 import type { IdentityRequest } from "../identity/identity.middleware";
 import type { RequestIdentity } from "../identity/identity.service";
 import { BookmarksService } from "./bookmarks.service";
 
 @Controller("bookmarks")
 export class BookmarksController {
-  constructor(private readonly bookmarksService: BookmarksService) {}
+  constructor(@Inject(BookmarksService) private readonly bookmarksService: BookmarksService) {}
 
   @Post(":questionId")
   add(@Param("questionId", new ParseUUIDPipe({ version: "4" })) questionId: string, @Req() request: IdentityRequest) {

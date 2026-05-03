@@ -1,4 +1,4 @@
-import { Body, Controller, Get, InternalServerErrorException, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Inject, InternalServerErrorException, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import type { Role } from "../domain/constants";
 import { AuditService } from "../audit/audit.service";
 import type { IdentityRequest } from "../identity/identity.middleware";
@@ -10,8 +10,11 @@ import { QuestionsService, type QuestionListQuery } from "../questions/questions
 @Roles("content_admin")
 export class AdminQuestionsController {
   constructor(
+    @Inject(QuestionsService)
     private readonly questionsService: QuestionsService,
+    @Inject(ImportExportService)
     private readonly importExportService: ImportExportService,
+    @Inject(AuditService)
     private readonly audit: AuditService
   ) {}
 

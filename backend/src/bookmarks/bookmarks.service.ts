@@ -1,10 +1,10 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import type { RequestIdentity } from "../identity/identity.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
 export class BookmarksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async add(questionId: string, identity: RequestIdentity) {
     await this.ensurePublishedQuestion(questionId);

@@ -11,6 +11,9 @@
 /coverage
 /frontend/coverage
 /backend/coverage
+/frontend/test-results/
+/frontend/playwright-report/
+/frontend/blob-report/
 
 # framework output
 /.next/

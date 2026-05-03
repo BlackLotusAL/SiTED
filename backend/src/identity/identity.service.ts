@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { Role } from "../domain/constants";
 import { getRoleLabel } from "../domain/labels";
 import { PrismaService } from "../prisma/prisma.service";
@@ -16,7 +16,7 @@ export interface RequestIdentity {
 
 @Injectable()
 export class IdentityService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async resolveIdentity(ip: string): Promise<RequestIdentity> {
     const role = await this.resolveRole(ip);

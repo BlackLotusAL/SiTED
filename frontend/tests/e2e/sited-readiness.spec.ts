@@ -1,8 +1,67 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type APIRequestContext, type Locator, type Page, test } from "@playwright/test";
 
 type TestRole = "learner" | "content_admin" | "system_admin";
+type QuestionType = "single" | "multiple" | "judgment";
+
+interface QuestionListItem {
+  id: string;
+  sourceCode: string | null;
+}
+
+interface QuestionListResponse {
+  items: QuestionListItem[];
+  total: number;
+}
+
+interface QuestionDetailResponse {
+  stemHtml: string;
+}
+
+interface AdminStatsResponse {
+  questions: {
+    total: number;
+    published: number;
+    bySubject: Array<{ subject: string; count: number }>;
+  };
+}
+
+const API_BASE_URL = "http://127.0.0.1:3000";
 
 test.describe("SiTED local readiness", () => {
+  test("seeded backend questions and admin stats are API-ready", async ({ request }) => {
+    const [single, multiple, judgment] = await Promise.all([
+      getQuestionList(request, "single"),
+      getQuestionList(request, "multiple"),
+      getQuestionList(request, "judgment")
+    ]);
+
+    expect(single.total).toBeGreaterThanOrEqual(22);
+    expect(multiple.total).toBeGreaterThanOrEqual(10);
+    expect(judgment.total).toBeGreaterThanOrEqual(8);
+    expect(single.items.some((item) => item.sourceCode === "SITED-SEED-EXAM-JAVA-WORKING-SINGLE-01")).toBe(true);
+    expect(multiple.items.some((item) => item.sourceCode === "SITED-SEED-EXAM-JAVA-WORKING-MULTIPLE-01")).toBe(true);
+    expect(judgment.items.some((item) => item.sourceCode === "SITED-SEED-EXAM-JAVA-WORKING-JUDGMENT-01")).toBe(true);
+
+    const detailResponse = await request.get(`${API_BASE_URL}/api/questions/${single.items[0].id}`);
+    expect(detailResponse.ok()).toBe(true);
+    const detail = (await detailResponse.json()) as QuestionDetailResponse;
+    expect(detail.stemHtml).toContain("<pre");
+    expect(detail.stemHtml).toContain("ConcurrentHashMap");
+
+    const statsResponse = await request.get(`${API_BASE_URL}/api/admin/stats`, {
+      headers: { "x-forwarded-for": "10.42.18.36" }
+    });
+    expect(statsResponse.ok()).toBe(true);
+    const stats = (await statsResponse.json()) as AdminStatsResponse;
+    expect(stats.questions.total).toBeGreaterThanOrEqual(46);
+    expect(stats.questions.published).toBeGreaterThanOrEqual(44);
+    expect(stats.questions.bySubject.map((item) => item.subject).sort()).toEqual([
+      "programming",
+      "refactoring",
+      "security_privacy"
+    ]);
+  });
+
   test("learner dashboard loads", async ({ page }) => {
     await mockIdentity(page, "learner");
     await page.goto("/");
@@ -132,6 +191,14 @@ async function mockIdentity(page: Page, role: TestRole) {
       })
     });
   });
+}
+
+async function getQuestionList(request: APIRequestContext, type: QuestionType): Promise<QuestionListResponse> {
+  const response = await request.get(
+    `${API_BASE_URL}/api/questions?subject=programming&language=java&level=working&type=${type}&pageSize=100`
+  );
+  expect(response.ok()).toBe(true);
+  return (await response.json()) as QuestionListResponse;
 }
 
 async function requiredBox(locator: Locator) {

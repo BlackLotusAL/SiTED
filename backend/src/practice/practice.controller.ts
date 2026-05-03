@@ -1,11 +1,11 @@
-import { Body, Controller, InternalServerErrorException, ParseUUIDPipe, Post, Req } from "@nestjs/common";
+import { Body, Controller, Inject, InternalServerErrorException, ParseUUIDPipe, Post, Req } from "@nestjs/common";
 import type { IdentityRequest } from "../identity/identity.middleware";
 import type { RequestIdentity } from "../identity/identity.service";
 import { PracticeService, type PracticeSubmitInput } from "./practice.service";
 
 @Controller("practice")
 export class PracticeController {
-  constructor(private readonly practiceService: PracticeService) {}
+  constructor(@Inject(PracticeService) private readonly practiceService: PracticeService) {}
 
   @Post("submit")
   submit(

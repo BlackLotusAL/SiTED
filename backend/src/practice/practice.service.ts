@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { Prisma, type Mistake } from "@prisma/client";
 import { isCorrectAnswer, isValidQuestionAnswerDefinition } from "../domain/validation";
 import type { RequestIdentity } from "../identity/identity.service";
@@ -40,7 +40,7 @@ const MAX_DURATION_SEC = 2147483647;
 
 @Injectable()
 export class PracticeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async submit(input: unknown, identity: RequestIdentity) {
     const normalized = normalizeSubmitInput(input);

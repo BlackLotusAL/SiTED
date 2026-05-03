@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { Role } from "../domain/constants";
 import {
@@ -29,7 +29,7 @@ export interface ImportActor {
 
 @Injectable()
 export class ImportExportService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async validateImport(input: unknown) {
     const errors: ImportError[] = [];

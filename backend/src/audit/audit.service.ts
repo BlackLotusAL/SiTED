@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { Role } from "../domain/constants";
 import { PrismaService } from "../prisma/prisma.service";
@@ -33,7 +33,7 @@ type AuditClient = Pick<PrismaService, "auditLog">;
 
 @Injectable()
 export class AuditService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   record(input: AuditRecordInput, client: AuditClient = this.prisma) {
     return client.auditLog.create({
