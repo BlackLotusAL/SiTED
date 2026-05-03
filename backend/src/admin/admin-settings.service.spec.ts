@@ -2,7 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { AdminSettingsService, DATA_CLEAR_CONFIRMATION_PHRASE } from "./admin-settings.service";
+import { AdminSettingsService, DATA_CLEAR_CONFIRMATION_PHRASE, type QuestionUploadRemover } from "./admin-settings.service";
 
 describe("AdminSettingsService", () => {
   const originalEnv = process.env;
@@ -20,7 +20,7 @@ describe("AdminSettingsService", () => {
   });
 
   it("lists IP role bindings with readable role labels, concrete permission names, table headers, and system admins from env only", async () => {
-    process.env.SYSTEM_ADMIN_IPS = "10.0.0.1";
+    process.env.SYSTEM_ADMIN_IPS = "10.0.0.1,10.0.0.8";
     const prisma = prismaMock();
     prisma.ipRoleBinding.findMany.mockResolvedValue([
       {
@@ -36,22 +36,23 @@ describe("AdminSettingsService", () => {
     const result = await service.listRoleBindings();
 
     expect(result.headers).toEqual(["IP", "fixed role", "permission scope", "description", "updated time"]);
+    expect(result.items).toHaveLength(2);
     expect(result.items).toEqual([
       expect.objectContaining({
         ip: "10.0.0.1",
-        role: "system_admin",
-        roleLabel: "System admin",
+        fixedRole: "System admin",
+        permissionScope: expect.arrayContaining(["Clear data", "View audit logs"]),
         permissions: expect.arrayContaining(["Clear data", "View audit logs"]),
         description: "From SYSTEM_ADMIN_IPS"
       }),
       expect.objectContaining({
         ip: "10.0.0.8",
-        role: "content_admin",
-        roleLabel: "Content admin",
-        permissions: expect.arrayContaining(["Create questions", "Import questions", "View basic stats"]),
-        description: "Question maintainer"
+        fixedRole: "System admin",
+        permissionScope: expect.arrayContaining(["Clear data", "View audit logs"]),
+        description: "From SYSTEM_ADMIN_IPS"
       })
     ]);
+    expect(JSON.stringify(result.items)).not.toContain("system_admin");
     expect(prisma.ipRoleBinding.findMany).toHaveBeenCalledWith({ orderBy: [{ updatedAt: "desc" }, { ip: "asc" }] });
   });
 
@@ -68,7 +69,7 @@ describe("AdminSettingsService", () => {
       { ip: "10.0.0.1", role: "system_admin" }
     );
 
-    expect(result).toMatchObject({ ip: "10.0.0.9", role: "content_admin", roleLabel: "Content admin" });
+    expect(result).toMatchObject({ ip: "10.0.0.9", fixedRole: "Content admin" });
     expect(prisma.ipRoleBinding.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { ip: "10.0.0.9" },
@@ -85,6 +86,25 @@ describe("AdminSettingsService", () => {
         detail: expect.objectContaining({ role: "content_admin", result: "success" })
       })
     });
+  });
+
+  it("rejects upsert and delete for env system admin IPs", async () => {
+    process.env.SYSTEM_ADMIN_IPS = "10.0.0.9";
+    const prisma = prismaMock();
+    const service = new AdminSettingsService(prisma as never);
+
+    await expect(
+      service.upsertRoleBinding(
+        { ip: "10.0.0.9", role: "content_admin", description: "downgrade" },
+        { ip: "10.0.0.1", role: "system_admin" }
+      )
+    ).rejects.toThrow(BadRequestException);
+    await expect(service.deleteRoleBinding("10.0.0.9", { ip: "10.0.0.1", role: "system_admin" })).rejects.toThrow(
+      BadRequestException
+    );
+
+    expect(prisma.ipRoleBinding.upsert).not.toHaveBeenCalled();
+    expect(prisma.ipRoleBinding.deleteMany).not.toHaveBeenCalled();
   });
 
   it("deletes role bindings with audit output", async () => {
@@ -135,7 +155,7 @@ describe("AdminSettingsService", () => {
       { ip: "10.0.0.1", role: "system_admin" }
     );
 
-    expect(result).toEqual({ scope: "activity", result: "success" });
+    expect(result).toEqual({ scope: "activity", result: "success", dbResult: "success" });
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
     expect(prisma.bookmark.deleteMany).toHaveBeenCalled();
     expect(prisma.mistake.deleteMany).toHaveBeenCalled();
@@ -152,7 +172,7 @@ describe("AdminSettingsService", () => {
     });
   });
 
-  it("clears questions after dependent activity, deletes only files under the question upload root, and keeps visitors", async () => {
+  it("clears questions and required question-bound records without clearing exam history, visitors, or role bindings", async () => {
     const questionDir = join(uploadRoot, "questions", "202605");
     await writeFileSafe(join(questionDir, "image.png"), "image");
     const prisma = prismaMock();
@@ -164,9 +184,62 @@ describe("AdminSettingsService", () => {
     );
 
     expect(prisma.practiceAttempt.deleteMany).toHaveBeenCalled();
+    expect(prisma.bookmark.deleteMany).toHaveBeenCalled();
+    expect(prisma.mistake.deleteMany).toHaveBeenCalled();
     expect(prisma.question.deleteMany).toHaveBeenCalled();
+    expect(prisma.examAttempt.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.ipRoleBinding.deleteMany).not.toHaveBeenCalled();
     expect(prisma.visitor.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "data_clear",
+        target: "questions",
+        detail: expect.objectContaining({
+          scope: "questions",
+          result: "success",
+          dbResult: "success",
+          fileResult: "success",
+          deletedQuestionBoundRecords: ["bookmarks", "mistakes", "practiceAttempts"]
+        })
+      })
+    });
     await expect(readdir(resolve(uploadRoot, "questions"))).rejects.toThrow();
+  });
+
+  it("returns and audits partial_success when question upload deletion fails after database clear", async () => {
+    const prisma = prismaMock();
+    const removeQuestionUploads = jest.fn<ReturnType<QuestionUploadRemover>, Parameters<QuestionUploadRemover>>().mockRejectedValue(
+      new Error("delete failed")
+    );
+    const service = new AdminSettingsService(prisma as never, undefined, removeQuestionUploads);
+
+    const result = await service.clearData(
+      { scope: "questions", confirmationPhrase: DATA_CLEAR_CONFIRMATION_PHRASE },
+      { ip: "10.0.0.1", role: "system_admin" }
+    );
+
+    expect(result).toEqual({
+      scope: "questions",
+      result: "partial_success",
+      dbResult: "success",
+      fileResult: "failed",
+      fileError: "delete failed",
+      deletedQuestionBoundRecords: ["bookmarks", "mistakes", "practiceAttempts"]
+    });
+    expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "data_clear",
+        target: "questions",
+        detail: expect.objectContaining({
+          scope: "questions",
+          result: "partial_success",
+          dbResult: "success",
+          fileResult: "failed",
+          fileError: "delete failed"
+        })
+      })
+    });
   });
 
   it("clears all P0 data including role bindings but still preserves visitors and audit history", async () => {
@@ -200,7 +273,7 @@ interface PrismaMock {
   examAttempt: { deleteMany: jest.Mock };
   question: { deleteMany: jest.Mock };
   visitor: { deleteMany: jest.Mock };
-  auditLog: { create: jest.Mock; findMany: jest.Mock; deleteMany: jest.Mock };
+  auditLog: { create: jest.Mock; findMany: jest.Mock; count: jest.Mock; deleteMany: jest.Mock };
   $transaction: jest.Mock;
 }
 
@@ -222,6 +295,7 @@ function prismaMock(): PrismaMock {
     auditLog: {
       create: jest.fn().mockResolvedValue({}),
       findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       deleteMany: jest.fn().mockResolvedValue({ count: 1 })
     },
     $transaction: jest.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma))

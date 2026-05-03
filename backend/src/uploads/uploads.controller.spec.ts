@@ -22,6 +22,21 @@ describe("UploadsController HTTP", () => {
       await adminApp.close();
     }
   });
+
+  it("does not fail a successful upload when best-effort audit logging fails", async () => {
+    const auditService = { record: jest.fn().mockRejectedValue(new Error("audit down")) };
+    const app = await createApp("content_admin", auditService);
+
+    try {
+      const response = await postUpload(app);
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ url: "/uploads/questions/202605/test.png" });
+      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: "question_upload" }));
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 @Module({})
@@ -36,7 +51,10 @@ class IdentityTestMiddleware implements NestMiddleware {
   }
 }
 
-async function createApp(role: "learner" | "content_admin"): Promise<INestApplication> {
+async function createApp(
+  role: "learner" | "content_admin",
+  auditService = { record: jest.fn().mockResolvedValue({}) }
+): Promise<INestApplication> {
   const uploadService = {
     saveQuestionImage: jest.fn().mockResolvedValue({ url: "/uploads/questions/202605/test.png" })
   };
@@ -45,7 +63,7 @@ async function createApp(role: "learner" | "content_admin"): Promise<INestApplic
     controllers: [UploadsController],
     providers: [
       { provide: UploadsService, useValue: uploadService },
-      { provide: AuditService, useValue: { record: jest.fn().mockResolvedValue({}) } }
+      { provide: AuditService, useValue: auditService }
     ]
   })
     .overrideProvider(PrismaService)

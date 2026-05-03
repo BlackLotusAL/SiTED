@@ -25,12 +25,16 @@ export class UploadsController {
   async uploadQuestionImage(@UploadedFile() file: Express.Multer.File | undefined, @Req() request: IdentityRequest) {
     const identity = requireIdentity(request);
     const result = await this.uploadsService.saveQuestionImage(file);
-    await this.audit.record({
-      actor: { ip: identity.ip, role: identity.role },
-      action: "question_upload",
-      target: result.url,
-      detail: { originalName: file?.originalname, size: file?.size, result: "success" }
-    });
+    try {
+      await this.audit.record({
+        actor: { ip: identity.ip, role: identity.role },
+        action: "question_upload",
+        target: result.url,
+        detail: { originalName: file?.originalname, size: file?.size, result: "success" }
+      });
+    } catch {
+      // Uploaded file is already persisted; audit is best-effort so the API does not report a false upload failure.
+    }
     return result;
   }
 }
