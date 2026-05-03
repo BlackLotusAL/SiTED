@@ -150,6 +150,10 @@ describe("PracticeService", () => {
       body: { questionId: questionId(), submittedAnswers: ["A"], durationSec: "2147483648" },
       label: "numeric string duration above prisma int"
     },
+    {
+      body: { questionId: questionId(), submittedAnswers: ["A"], durationSec: "999999999999999999999999999999999999" },
+      label: "numeric string duration above safe integer range"
+    },
     { body: { questionId: "not-a-uuid", submittedAnswers: ["A"] }, label: "invalid question id" }
   ])("rejects invalid practice submissions: $label", async ({ body }) => {
     const tx = transactionMock({ question: questionRecord(), mistake: null });
