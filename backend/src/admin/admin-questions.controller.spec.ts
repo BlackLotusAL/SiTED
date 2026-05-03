@@ -48,6 +48,23 @@ describe("AdminQuestionsController HTTP", () => {
       await app.close();
     }
   });
+
+  it("does not fail successful admin question writes when best-effort audit logging fails", async () => {
+    const questionsService = questionsServiceMock();
+    const auditService = { record: jest.fn().mockRejectedValue(new Error("audit down")) };
+    const app = await createApp("content_admin", questionsService, importExportServiceMock(), auditService);
+
+    try {
+      const response = await fetchJson(app, "/api/admin/questions/q1", { method: "PATCH", body: { memo: "new" } });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ id: "q1" });
+      expect(questionsService.updateAdmin).toHaveBeenCalledWith("q1", { memo: "new" });
+      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: "question_update", target: "q1" }));
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 @Module({})
@@ -65,7 +82,8 @@ class IdentityTestMiddleware implements NestMiddleware {
 async function createApp(
   role: Role,
   questionsService = questionsServiceMock(),
-  importExportService = importExportServiceMock()
+  importExportService = importExportServiceMock(),
+  auditService = { record: jest.fn().mockResolvedValue({}) }
 ): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [IdentityModule, TestModule],
@@ -73,7 +91,7 @@ async function createApp(
     providers: [
       { provide: QuestionsService, useValue: questionsService },
       { provide: ImportExportService, useValue: importExportService },
-      { provide: AuditService, useValue: { record: jest.fn().mockResolvedValue({}) } }
+      { provide: AuditService, useValue: auditService }
     ]
   })
     .overrideProvider(PrismaService)

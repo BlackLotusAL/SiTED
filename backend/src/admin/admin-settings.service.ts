@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Optional } from "@nestjs/common";
 import { rm } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { Role } from "../domain/constants";
@@ -12,6 +12,8 @@ export const DATA_CLEAR_CONFIRMATION_PHRASE = "CONFIRM_CLEAR_SITED_DATA";
 
 type BindingRole = Extract<Role, "learner" | "content_admin">;
 type ClearScope = "activity" | "questions" | "all";
+export type QuestionUploadRemover = () => Promise<void>;
+export const QUESTION_UPLOAD_REMOVER = Symbol("QUESTION_UPLOAD_REMOVER");
 
 const TABLE_HEADERS = ["IP", "fixed role", "permission scope", "description", "updated time"] as const;
 const ROLE_LABELS: Record<Role, string> = {
@@ -42,7 +44,8 @@ const PERMISSION_LABELS: Record<Permission, string> = {
 export class AdminSettingsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService = new AuditService(prisma)
+    private readonly audit: AuditService = new AuditService(prisma),
+    @Optional() @Inject(QUESTION_UPLOAD_REMOVER) private readonly removeUploads: QuestionUploadRemover = removeQuestionUploads
   ) {}
 
   async listRoleBindings() {
@@ -51,6 +54,7 @@ export class AdminSettingsService {
       Promise.resolve(systemAdminIpList())
     ]);
 
+    const systemAdminIpSet = new Set(systemAdminIps);
     const systemItems = systemAdminIps.map((ip) =>
       roleBindingItem({
         ip,
@@ -59,20 +63,23 @@ export class AdminSettingsService {
         updatedAt: null
       })
     );
-    const bindingItems = bindings.map((binding) =>
-      roleBindingItem({
-        ip: binding.ip,
-        role: binding.role,
-        description: binding.note ?? "",
-        updatedAt: binding.updatedAt
-      })
-    );
+    const bindingItems = bindings
+      .filter((binding) => !systemAdminIpSet.has(binding.ip))
+      .map((binding) =>
+        roleBindingItem({
+          ip: binding.ip,
+          role: binding.role,
+          description: binding.note ?? "",
+          updatedAt: binding.updatedAt
+        })
+      );
 
     return { headers: [...TABLE_HEADERS], items: [...systemItems, ...bindingItems] };
   }
 
   async upsertRoleBinding(input: unknown, actor: AuditActor) {
     const normalized = normalizeRoleBindingInput(input);
+    rejectEnvSystemAdminIp(normalized.ip);
     const binding = await this.prisma.ipRoleBinding.upsert({
       where: { ip: normalized.ip },
       create: {
@@ -105,6 +112,7 @@ export class AdminSettingsService {
 
   async deleteRoleBinding(ipInput: string, actor: AuditActor) {
     const ip = normalizeIp(ipInput);
+    rejectEnvSystemAdminIp(ip);
     await this.prisma.ipRoleBinding.deleteMany({ where: { ip } });
     await this.audit.record({
       actor,
@@ -145,49 +153,66 @@ export class AdminSettingsService {
       });
     }
 
+    let dbDetail: Record<string, unknown>;
     try {
       await this.prisma.$transaction(async (tx) => {
-        await deleteActivity(tx);
-        if (normalized.scope === "questions" || normalized.scope === "all") {
+        if (normalized.scope === "activity" || normalized.scope === "all") {
+          await deleteActivity(tx);
+        }
+        if (normalized.scope === "questions") {
+          await deleteQuestionBoundRecords(tx);
           await tx.question.deleteMany();
         }
         if (normalized.scope === "all") {
+          await tx.question.deleteMany();
           await tx.ipRoleBinding.deleteMany();
         }
-        await this.audit.record(
-          {
-            actor,
-            action: "data_clear",
-            target: normalized.scope,
-            detail: { scope: normalized.scope, result: "success" }
-          },
-          tx
-        );
       });
-
-      if (normalized.scope === "questions" || normalized.scope === "all") {
-        await removeQuestionUploads();
-      }
-
-      return { scope: normalized.scope, result: "success" };
+      dbDetail = {
+        dbResult: "success",
+        ...(normalized.scope === "questions"
+          ? { deletedQuestionBoundRecords: ["bookmarks", "mistakes", "practiceAttempts"] }
+          : {})
+      };
     } catch (error) {
       await this.audit.record({
         actor,
         action: "data_clear",
         target: normalized.scope,
-        detail: { scope: normalized.scope, result: "failed", reason: errorMessage(error) }
+        detail: { scope: normalized.scope, result: "failed", dbResult: "failed", reason: errorMessage(error) }
       });
       throw error;
     }
+
+    let fileDetail: Record<string, unknown> = {};
+    let result = "success";
+    if (normalized.scope === "questions" || normalized.scope === "all") {
+      try {
+        await this.removeUploads();
+        fileDetail = { fileResult: "success" };
+      } catch (error) {
+        result = "partial_success";
+        fileDetail = { fileResult: "failed", fileError: errorMessage(error) };
+      }
+    }
+
+    const detail = { scope: normalized.scope, result, ...dbDetail, ...fileDetail };
+    await this.audit.record({
+      actor,
+      action: "data_clear",
+      target: normalized.scope,
+      detail
+    });
+
+    return detail;
   }
 }
 
 function roleBindingItem(input: { ip: string; role: Role; description: string; updatedAt: Date | null }) {
   return {
     ip: input.ip,
-    role: input.role,
-    roleLabel: ROLE_LABELS[input.role],
-    permissionScope: ROLE_LABELS[input.role],
+    fixedRole: ROLE_LABELS[input.role],
+    permissionScope: permissionsForRole(input.role).map((permission) => PERMISSION_LABELS[permission]),
     permissions: permissionsForRole(input.role).map((permission) => PERMISSION_LABELS[permission]),
     description: input.description,
     updatedAt: input.updatedAt
@@ -234,6 +259,16 @@ async function deleteActivity(tx: {
   await tx.examAttempt.deleteMany();
 }
 
+async function deleteQuestionBoundRecords(tx: {
+  bookmark: { deleteMany: () => Promise<unknown> };
+  mistake: { deleteMany: () => Promise<unknown> };
+  practiceAttempt: { deleteMany: () => Promise<unknown> };
+}): Promise<void> {
+  await tx.bookmark.deleteMany();
+  await tx.mistake.deleteMany();
+  await tx.practiceAttempt.deleteMany();
+}
+
 async function removeQuestionUploads(): Promise<void> {
   const uploadRoot = resolve(resolveUploadRoot());
   const questionRoot = resolve(uploadRoot, "questions");
@@ -252,6 +287,12 @@ function systemAdminIpList(): string[] {
   return parseCsv(process.env.SYSTEM_ADMIN_IPS)
     .map(normalizeIpv4)
     .filter((ip): ip is string => ip !== null);
+}
+
+function rejectEnvSystemAdminIp(ip: string): void {
+  if (systemAdminIpList().includes(ip)) {
+    throw invalidSettingsInput("SYSTEM_ADMIN_IPS entries cannot be managed through IP role bindings");
+  }
 }
 
 function normalizeIp(value: unknown): string {

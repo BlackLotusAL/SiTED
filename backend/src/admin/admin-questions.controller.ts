@@ -19,7 +19,7 @@ export class AdminQuestionsController {
   async export(@Query() query: QuestionListQuery, @Req() request: IdentityRequest) {
     const identity = requireIdentity(request);
     const result = await this.importExportService.exportQuestions(query);
-    await this.audit.record({
+    await this.recordAudit({
       actor: { ip: identity.ip, role: identity.role },
       action: "question_export",
       target: "questions",
@@ -48,7 +48,7 @@ export class AdminQuestionsController {
   async create(@Body() body: unknown, @Req() request: IdentityRequest) {
     const identity = requireIdentity(request);
     const question = await this.questionsService.createAdmin(body, identity.ip);
-    await this.audit.record({
+    await this.recordAudit({
       actor: { ip: identity.ip, role: identity.role },
       action: "question_create",
       target: question.id
@@ -65,7 +65,7 @@ export class AdminQuestionsController {
   async update(@Param("id") id: string, @Body() body: unknown, @Req() request: IdentityRequest) {
     const identity = requireIdentity(request);
     const question = await this.questionsService.updateAdmin(id, body);
-    await this.audit.record({
+    await this.recordAudit({
       actor: { ip: identity.ip, role: identity.role },
       action: "question_update",
       target: id
@@ -77,7 +77,7 @@ export class AdminQuestionsController {
   async publish(@Param("id") id: string, @Req() request: IdentityRequest) {
     const identity = requireIdentity(request);
     const question = await this.questionsService.publishAdmin(id);
-    await this.audit.record({
+    await this.recordAudit({
       actor: { ip: identity.ip, role: identity.role },
       action: "question_publish",
       target: id
@@ -89,12 +89,20 @@ export class AdminQuestionsController {
   async archive(@Param("id") id: string, @Req() request: IdentityRequest) {
     const identity = requireIdentity(request);
     const question = await this.questionsService.archiveAdmin(id);
-    await this.audit.record({
+    await this.recordAudit({
       actor: { ip: identity.ip, role: identity.role },
       action: "question_archive",
       target: id
     });
     return question;
+  }
+
+  private async recordAudit(input: Parameters<AuditService["record"]>[0]): Promise<void> {
+    try {
+      await this.audit.record(input);
+    } catch {
+      // Admin writes are authoritative; audit is best-effort for these existing non-transactional service calls.
+    }
   }
 }
 

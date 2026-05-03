@@ -35,40 +35,81 @@ describe("AdminStatsService", () => {
     expect(stats.trends.visitors).toHaveLength(7);
     expect(stats.trends.practiceQuestions).toHaveLength(7);
     expect(stats.trends.exams).toHaveLength(7);
-    expect(prisma.question.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { totalAttempts: { gt: 0 } },
-        orderBy: [{ totalAttempts: "desc" }, { updatedAt: "desc" }],
-        take: 100
-      })
-    );
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
+    expect(prisma.question.findMany).not.toHaveBeenCalled();
+    expect(prisma.visitor.groupBy).not.toHaveBeenCalled();
+    expect(prisma.practiceAttempt.groupBy).not.toHaveBeenCalled();
+    expect(prisma.examAttempt.groupBy).not.toHaveBeenCalled();
+  });
+
+  it("does not lose low-correct-rate questions outside the first 100 most-attempted rows", async () => {
+    const prisma = prismaMock();
+    prisma.$queryRaw.mockReset();
+    prisma.$queryRaw
+      .mockResolvedValueOnce([questionRecord({ id: "q-rare-low", totalAttempts: 1, correctAttempts: 0 })])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const service = new AdminStatsService(prisma as never, () => new Date("2026-05-03T12:00:00.000Z"));
+
+    const stats = await service.getStats();
+
+    expect(stats.lowCorrectRateQuestions).toEqual([expect.objectContaining({ id: "q-rare-low", correctRate: 0 })]);
+    expect(prisma.$queryRaw.mock.calls[0][0].sql).toContain("ORDER BY");
+    expect(prisma.$queryRaw.mock.calls[0][0].sql).toContain("LIMIT 10");
+  });
+
+  it("aggregates trends in the Asia/Hong_Kong business timezone instead of grouping every raw timestamp", async () => {
+    const prisma = prismaMock();
+    const service = new AdminStatsService(prisma as never, () => new Date("2026-05-03T16:30:00.000Z"));
+
+    await service.getStats();
+
+    const trendSql = prisma.$queryRaw.mock.calls[1][0].sql as string;
+    expect(trendSql).toContain("Asia/Hong_Kong");
+    expect(trendSql).toContain("date_trunc");
+    expect(prisma.visitor.count).toHaveBeenCalledWith({
+      where: {
+        lastSeenAt: {
+          gte: new Date("2026-05-03T16:00:00.000Z"),
+          lt: new Date("2026-05-04T16:00:00.000Z")
+        }
+      }
+    });
+    expect(prisma.visitor.groupBy).not.toHaveBeenCalled();
   });
 });
 
 function prismaMock() {
   return {
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValueOnce([
+        questionRecord({ id: "q-low", sourceCode: "SRC-LOW", totalAttempts: 10, correctAttempts: 2 }),
+        questionRecord({ id: "q-high", sourceCode: "SRC-HIGH", totalAttempts: 20, correctAttempts: 18 })
+      ])
+      .mockResolvedValueOnce([{ date: "2026-05-03", count: 3 }])
+      .mockResolvedValueOnce([{ date: "2026-05-03", count: 7 }])
+      .mockResolvedValueOnce([{ date: "2026-05-03", count: 2 }]),
     question: {
       count: jest.fn(async ({ where }: { where?: { status?: string } } = {}) => (where?.status === "published" ? 30 : 42)),
       groupBy: jest.fn().mockResolvedValue([
         { subject: "programming", _count: { _all: 18 } },
         { subject: "security_privacy", _count: { _all: 9 } }
       ]),
-      findMany: jest.fn().mockResolvedValue([
-        questionRecord({ id: "q-high", sourceCode: "SRC-HIGH", totalAttempts: 20, correctAttempts: 18 }),
-        questionRecord({ id: "q-low", sourceCode: "SRC-LOW", totalAttempts: 10, correctAttempts: 2 })
-      ])
+      findMany: jest.fn()
     },
     visitor: {
       count: jest.fn().mockResolvedValue(3),
-      groupBy: jest.fn().mockResolvedValue([{ lastSeenAt: new Date("2026-05-03T03:00:00.000Z"), _count: { _all: 3 } }])
+      groupBy: jest.fn()
     },
     practiceAttempt: {
       count: jest.fn().mockResolvedValue(7),
-      groupBy: jest.fn().mockResolvedValue([{ createdAt: new Date("2026-05-03T03:00:00.000Z"), _count: { _all: 7 } }])
+      groupBy: jest.fn()
     },
     examAttempt: {
       count: jest.fn().mockResolvedValue(2),
-      groupBy: jest.fn().mockResolvedValue([{ startedAt: new Date("2026-05-03T03:00:00.000Z"), _count: { _all: 2 } }])
+      groupBy: jest.fn()
     }
   };
 }

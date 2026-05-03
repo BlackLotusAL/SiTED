@@ -27,6 +27,20 @@ describe("AdminSettingsController HTTP", () => {
       await systemAdminApp.close();
     }
   });
+
+  it("serves PRD admin IP role and data clear paths", async () => {
+    const app = await createApp("system_admin");
+
+    try {
+      expect((await fetchJson(app, "/api/admin/ip-roles")).status).toBe(200);
+      expect((await fetchJson(app, "/api/admin/ip-roles/10.0.0.8", { method: "PUT", body: { role: "content_admin" } })).status).toBe(
+        200
+      );
+      expect((await fetchJson(app, "/api/admin/data/clear", { method: "POST", body: { scope: "activity" } })).status).toBe(201);
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 @Module({})
