@@ -1,6 +1,7 @@
 import { PracticeQuestionRenderer, type PracticeQuestion } from "./PracticePage";
 
 const RECITE_QUESTION: PracticeQuestion = {
+  id: "recite-java-map",
   sourceLabel: "科目二 / Java / 工作级",
   progressLabel: "背诵模式",
   title: "下面哪个集合适合在并发读写场景下作为线程安全 Map 使用？",
