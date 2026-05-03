@@ -1,7 +1,13 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { Role } from "../domain/constants";
-import { isValidQuestionStatus } from "../domain/validation";
+import {
+  isValidLanguage,
+  isValidLevel,
+  isValidQuestionStatus,
+  isValidQuestionType,
+  isValidSubject
+} from "../domain/validation";
 import { PrismaService } from "../prisma/prisma.service";
 import { normalizeQuestionInput, validateQuestionInput, type NormalizedQuestionInput } from "../questions/question-validator";
 
@@ -29,6 +35,7 @@ export class ImportExportService {
     const errors: ImportError[] = [];
     const questions = this.extractBatch(input, errors);
     const seenSourceCodes = new Map<string, number>();
+    const sourceRows = new Map<string, number[]>();
     let validRows = 0;
 
     questions.forEach((question, index) => {
@@ -36,6 +43,7 @@ export class ImportExportService {
       const rowErrors = validateQuestionInput(question);
       const sourceCode = sourceCodeOf(question);
       if (sourceCode !== undefined) {
+        sourceRows.set(sourceCode, [...(sourceRows.get(sourceCode) ?? []), row]);
         const firstRow = seenSourceCodes.get(sourceCode);
         if (firstRow !== undefined) {
           rowErrors.push({ field: "sourceCode", message: `Duplicate sourceCode also appears on row ${firstRow}` });
@@ -50,6 +58,16 @@ export class ImportExportService {
         errors.push(...rowErrors.map((error) => ({ row, field: error.field, message: error.message })));
       }
     });
+
+    const existingSourceCodes = await this.findExistingSourceCodes([...sourceRows.keys()]);
+    for (const sourceCode of existingSourceCodes) {
+      for (const row of sourceRows.get(sourceCode) ?? []) {
+        errors.push({ row, field: "sourceCode", message: "sourceCode already exists" });
+      }
+    }
+
+    const rowsWithErrors = new Set(errors.filter((error) => error.row > 0).map((error) => error.row));
+    validRows = questions.filter((_question, index) => !rowsWithErrors.has(index + 1)).length;
 
     return {
       valid: errors.length === 0,
@@ -72,46 +90,71 @@ export class ImportExportService {
     const batch = input as ImportBatch;
     const normalized = batch.questions.map((question) => normalizeQuestionInput(question));
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const question of normalized) {
-        await tx.question.create({
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const question of normalized) {
+          await tx.question.create({
+            data: {
+              ...this.toQuestionData(question),
+              createdByIp: actor.actorIp,
+              status: "draft"
+            }
+          });
+        }
+
+        await tx.auditLog.create({
           data: {
-            ...this.toQuestionData(question),
-            createdByIp: actor.actorIp,
-            status: "draft"
+            actorIp: actor.actorIp,
+            role: actor.role,
+            action: "question_import",
+            target: "questions",
+            detail: { importedCount: normalized.length }
           }
         });
-      }
-
-      await tx.auditLog.create({
-        data: {
-          actorIp: actor.actorIp,
-          role: actor.role,
-          action: "question_import",
-          target: "questions",
-          detail: { importedCount: normalized.length }
-        }
       });
-    });
+    } catch (error) {
+      if (isPrismaErrorCode(error, "P2002")) {
+        throw new ConflictException({
+          code: "QUESTION_SOURCE_CODE_CONFLICT",
+          message: "Question sourceCode already exists"
+        });
+      }
+      throw error;
+    }
 
     return { importedCount: normalized.length };
   }
 
   async exportQuestions(query: { subject?: string; language?: string; level?: string; type?: string; status?: string }) {
     const where: Prisma.QuestionWhereInput = {};
-    if (typeof query.subject === "string") {
-      where.subject = query.subject as never;
+    if (query.subject !== undefined) {
+      if (!isValidSubject(query.subject)) {
+        throw invalidFilter("subject");
+      }
+      where.subject = query.subject;
     }
-    if (typeof query.language === "string") {
-      where.language = query.language as never;
+    if (query.language !== undefined) {
+      if (!isValidLanguage(query.language)) {
+        throw invalidFilter("language");
+      }
+      where.language = query.language;
     }
-    if (typeof query.level === "string") {
-      where.level = query.level as never;
+    if (query.level !== undefined) {
+      if (!isValidLevel(query.level)) {
+        throw invalidFilter("level");
+      }
+      where.level = query.level;
     }
-    if (typeof query.type === "string") {
-      where.type = query.type as never;
+    if (query.type !== undefined) {
+      if (!isValidQuestionType(query.type)) {
+        throw invalidFilter("type");
+      }
+      where.type = query.type;
     }
-    if (isValidQuestionStatus(query.status)) {
+    if (query.status !== undefined) {
+      if (!isValidQuestionStatus(query.status)) {
+        throw invalidFilter("status");
+      }
       where.status = query.status;
     }
 
@@ -171,6 +214,19 @@ export class ImportExportService {
       status: "draft"
     };
   }
+
+  private async findExistingSourceCodes(sourceCodes: string[]): Promise<Set<string>> {
+    if (sourceCodes.length === 0) {
+      return new Set();
+    }
+
+    const existing = await this.prisma.question.findMany({
+      where: { sourceCode: { in: sourceCodes } },
+      select: { sourceCode: true }
+    });
+
+    return new Set(existing.map((question) => question.sourceCode).filter((sourceCode): sourceCode is string => sourceCode !== null));
+  }
 }
 
 function sourceCodeOf(question: unknown): string | undefined {
@@ -196,4 +252,15 @@ function exportOptions(options: Prisma.JsonValue, correctAnswers: string[]) {
         isCorrect: typeof candidate.key === "string" && correct.has(candidate.key)
       };
     });
+}
+
+function invalidFilter(field: string): BadRequestException {
+  return new BadRequestException({
+    code: "INVALID_EXPORT_FILTER",
+    message: `Invalid export filter: ${field}`
+  });
+}
+
+function isPrismaErrorCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === code;
 }

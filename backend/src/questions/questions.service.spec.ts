@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import { MarkdownService } from "./markdown.service";
 import { QuestionsService } from "./questions.service";
 
@@ -131,7 +131,70 @@ describe("QuestionsService", () => {
       explanationHtml: "<p>safe</p>"
     });
   });
+
+  it("maps duplicate sourceCode create and update failures to conflict responses", async () => {
+    const duplicateError = { code: "P2002", meta: { target: ["sourceCode"] } };
+    const prisma = {
+      question: {
+        create: jest.fn().mockRejectedValue(duplicateError),
+        findUnique: jest.fn().mockResolvedValue(questionRecord({ status: "draft" })),
+        update: jest.fn().mockRejectedValue(duplicateError)
+      }
+    };
+    const service = new QuestionsService(prisma as never, markdownStub());
+
+    await expect(service.createAdmin(validQuestionInput(), "10.0.0.5")).rejects.toThrow(ConflictException);
+    await expect(service.updateAdmin("q1", { sourceCode: "SRC-1" })).rejects.toThrow(ConflictException);
+  });
+
+  it("archives missing questions with a unified not found response", async () => {
+    const prisma = {
+      question: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn()
+      }
+    };
+    const service = new QuestionsService(prisma as never, markdownStub());
+
+    await expect(service.archiveAdmin("missing")).rejects.toThrow(NotFoundException);
+    expect(prisma.question.update).not.toHaveBeenCalled();
+  });
+
+  it("uses explicit admin status transitions for publish and archive", async () => {
+    const prisma = {
+      question: {
+        findUnique: jest.fn().mockResolvedValue(questionRecord({ status: "draft" })),
+        update: jest.fn().mockImplementation(({ data }) => Promise.resolve(questionRecord({ status: data.status })))
+      }
+    };
+    const service = new QuestionsService(prisma as never, markdownStub());
+
+    await service.publishAdmin("q1");
+    await service.archiveAdmin("q1");
+
+    expect(prisma.question.update).toHaveBeenNthCalledWith(1, { where: { id: "q1" }, data: { status: "published" } });
+    expect(prisma.question.update).toHaveBeenNthCalledWith(2, { where: { id: "q1" }, data: { status: "archived" } });
+  });
 });
+
+function validQuestionInput(overrides: Record<string, unknown> = {}) {
+  return {
+    subject: "programming",
+    language: "java",
+    level: "working",
+    type: "single",
+    stemMd: "stem **md**",
+    options: [
+      { key: "A", text: "ArrayList", isCorrect: false },
+      { key: "B", text: "ConcurrentHashMap", isCorrect: true }
+    ],
+    explanationMd: "explanation",
+    memo: "memo",
+    tags: ["collections"],
+    sourceCode: "SRC-1",
+    ...overrides
+  };
+}
 
 function questionRecord(overrides: Partial<Record<string, unknown>> = {}) {
   return {

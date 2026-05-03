@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type Question } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { MarkdownService } from "./markdown.service";
@@ -92,12 +92,14 @@ export class QuestionsService {
 
   async createAdmin(input: unknown, createdByIp: string) {
     const normalized = normalizeQuestionInput(input);
-    const question = await this.prisma.question.create({
-      data: {
-        ...this.toQuestionData(normalized),
-        createdByIp
-      }
-    });
+    const question = await this.mapPrismaWriteErrors(() =>
+      this.prisma.question.create({
+        data: {
+          ...this.toQuestionData(normalized),
+          createdByIp
+        }
+      })
+    );
 
     return this.toAdminDetail(question);
   }
@@ -110,10 +112,12 @@ export class QuestionsService {
 
     const patch = typeof input === "object" && input !== null ? input : {};
     const normalized = normalizeQuestionInput({ ...current, ...patch }, current.status);
-    const question = await this.prisma.question.update({
-      where: { id },
-      data: this.toQuestionData(normalized)
-    });
+    const question = await this.mapPrismaWriteErrors(() =>
+      this.prisma.question.update({
+        where: { id },
+        data: this.toQuestionData(normalized)
+      })
+    );
 
     return this.toAdminDetail(question);
   }
@@ -134,6 +138,11 @@ export class QuestionsService {
   }
 
   async archiveAdmin(id: string) {
+    const current = await this.prisma.question.findUnique({ where: { id } });
+    if (current === null) {
+      throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
+    }
+
     const question = await this.prisma.question.update({
       where: { id },
       data: { status: "archived" }
@@ -281,6 +290,23 @@ export class QuestionsService {
       sourceCode: question.sourceCode
     };
   }
+
+  private async mapPrismaWriteErrors<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (isPrismaErrorCode(error, "P2002")) {
+        throw new ConflictException({
+          code: "QUESTION_SOURCE_CODE_CONFLICT",
+          message: "Question sourceCode already exists"
+        });
+      }
+      if (isPrismaErrorCode(error, "P2025")) {
+        throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
+      }
+      throw error;
+    }
+  }
 }
 
 type QuestionRecord = Question;
@@ -323,4 +349,8 @@ function clampInt(value: string | number | undefined, min: number, max: number, 
     return fallback;
   }
   return Math.min(Math.max(parsed, min), max);
+}
+
+function isPrismaErrorCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === code;
 }

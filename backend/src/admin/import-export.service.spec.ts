@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { ImportExportService } from "./import-export.service";
 
 describe("ImportExportService", () => {
@@ -38,6 +38,32 @@ describe("ImportExportService", () => {
       BadRequestException
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("reports existing database sourceCode values as row-level validation errors", async () => {
+    const prisma = prismaMock();
+    prisma.question.findMany.mockResolvedValue([{ sourceCode: "SRC-1" }]);
+    const service = new ImportExportService(prisma as never);
+
+    const report = await service.validateImport({ version: "1.0", questions: [validImportQuestion()] });
+
+    expect(prisma.question.findMany).toHaveBeenCalledWith({
+      where: { sourceCode: { in: ["SRC-1"] } },
+      select: { sourceCode: true }
+    });
+    expect(report).toMatchObject({ valid: false, importableCount: 0, failedCount: 1 });
+    expect(report.errors).toEqual(expect.arrayContaining([expect.objectContaining({ row: 1, field: "sourceCode" })]));
+  });
+
+  it("keeps import atomic and maps database unique races to conflict responses", async () => {
+    const prisma = prismaMock();
+    const duplicateError = { code: "P2002", meta: { target: ["sourceCode"] } };
+    prisma.question.create.mockRejectedValue(duplicateError);
+    const service = new ImportExportService(prisma as never);
+
+    await expect(service.commitImport({ version: "1.0", questions: [validImportQuestion()] }, { actorIp: "10.0.0.5", role: "content_admin" })).rejects.toThrow(
+      ConflictException
+    );
   });
 
   it("imports a valid batch atomically with correctAnswers derived from options", async () => {
@@ -92,6 +118,14 @@ describe("ImportExportService", () => {
     expect(Object.keys(exported.questions[0])).not.toEqual(
       expect.arrayContaining(["id", "totalAttempts", "correctAttempts", "createdByIp", "createdAt", "updatedAt", "status"])
     );
+  });
+
+  it("rejects invalid export filters before calling Prisma", async () => {
+    const prisma = prismaMock();
+    const service = new ImportExportService(prisma as never);
+
+    await expect(service.exportQuestions({ subject: "bad-subject" })).rejects.toThrow(BadRequestException);
+    expect(prisma.question.findMany).not.toHaveBeenCalled();
   });
 });
 
