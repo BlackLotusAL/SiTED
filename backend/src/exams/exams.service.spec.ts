@@ -1,0 +1,331 @@
+import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import type { RequestIdentity } from "../identity/identity.service";
+import type { ExamConfigService } from "./exam-config.service";
+import { ExamsService } from "./exams.service";
+
+describe("ExamsService", () => {
+  it("rejects exam creation when published questions are insufficient and reports missing counts by type", async () => {
+    const tx = transactionMock();
+    tx.question.findMany.mockImplementation(({ where }: { where: { type: string } }) =>
+      Promise.resolve(questionPool(where.type, where.type === "single" ? 1 : 0))
+    );
+    const service = examService(tx, configService({ judgment: 1, single: 2, multiple: 1 }));
+
+    await expect(
+      service.create({ subject: "programming", language: "java", level: "entry" }, identity())
+    ).rejects.toMatchObject({
+      response: {
+        code: "EXAM_QUESTIONS_INSUFFICIENT",
+        missing: [
+          { type: "single", required: 2, available: 1, missing: 1 },
+          { type: "multiple", required: 1, available: 0, missing: 1 },
+          { type: "judgment", required: 1, available: 0, missing: 1 }
+        ]
+      }
+    });
+    expect(tx.examAttempt.create).not.toHaveBeenCalled();
+    expect(tx.question.findMany).toHaveBeenCalledWith({
+      where: {
+        status: "published",
+        subject: "programming",
+        language: "java",
+        level: "entry",
+        type: "single"
+      }
+    });
+  });
+
+  it("creates an exam with timing, config snapshot, question snapshot, and no leaked answers in active state", async () => {
+    const tx = transactionMock();
+    tx.question.findMany.mockImplementation(({ where }: { where: { type: string } }) =>
+      Promise.resolve(questionPool(where.type, 1))
+    );
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.create({ subject: "programming", language: "java", level: "entry" }, identity());
+
+    expect(tx.examAttempt.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        visitorId: "visitor1",
+        subject: "programming",
+        language: "java",
+        level: "entry",
+        configSnapshot: {
+          durationMinutes: 45,
+          passScorePercent: 60,
+          questionCounts: { judgment: 1, single: 1, multiple: 1 }
+        },
+        answers: {},
+        status: "in_progress",
+        startedAt: new Date("2026-05-03T00:00:00.000Z"),
+        deadlineAt: new Date("2026-05-03T00:45:00.000Z")
+      })
+    });
+    expect(result.status).toBe("in_progress");
+    expect(result.deadlineAt).toEqual(new Date("2026-05-03T00:45:00.000Z"));
+    expect(result.questions).toHaveLength(3);
+    expect(result.questions[0]).not.toHaveProperty("correctAnswers");
+    expect(result.questions[0]).not.toHaveProperty("explanationMd");
+  });
+
+  it("reuses an active unfinished exam for the same visitor and source", async () => {
+    const activeExam = examAttemptRecord({ id: "active-exam" });
+    const tx = transactionMock({ activeExam });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.create({ subject: "programming", language: "java", level: "entry" }, identity());
+
+    expect(result.id).toBe("active-exam");
+    expect(tx.question.findMany).not.toHaveBeenCalled();
+    expect(tx.examAttempt.create).not.toHaveBeenCalled();
+  });
+
+  it("autosaves valid answers for active exams without scoring", async () => {
+    const tx = transactionMock({ exam: examAttemptRecord() });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.saveAnswers("exam1", { answers: { [singleQuestionId()]: ["B"] } }, identity());
+
+    expect(tx.examAttempt.update).toHaveBeenCalledWith({
+      where: { id: "exam1" },
+      data: { answers: { [singleQuestionId()]: ["B"] } }
+    });
+    expect(result.answers).toEqual({ [singleQuestionId()]: ["B"] });
+    expect(result.scorePercent).toBeNull();
+  });
+
+  it("rejects invalid answer shapes instead of throwing an internal error", async () => {
+    const tx = transactionMock({ exam: examAttemptRecord() });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    await expect(service.saveAnswers("exam1", { answers: { [singleQuestionId()]: ["Z"] } }, identity())).rejects.toThrow(
+      BadRequestException
+    );
+    expect(tx.examAttempt.update).not.toHaveBeenCalled();
+  });
+
+  it("submits once, scores order-insensitive multiple answers, records wrong questions as mistakes, and returns review output", async () => {
+    const tx = transactionMock({ exam: examAttemptRecord() });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.submit(
+      "exam1",
+      {
+        answers: {
+          [singleQuestionId()]: ["B"],
+          [multipleQuestionId()]: ["C", "A"],
+          [judgmentQuestionId()]: ["B"]
+        }
+      },
+      identity()
+    );
+
+    expect(tx.examAttempt.update).toHaveBeenCalledWith({
+      where: { id: "exam1" },
+      data: expect.objectContaining({
+        answers: {
+          [singleQuestionId()]: ["B"],
+          [multipleQuestionId()]: ["C", "A"],
+          [judgmentQuestionId()]: ["B"]
+        },
+        status: "submitted",
+        scorePercent: new Prisma.Decimal("66.67"),
+        isPassed: true,
+        submittedAt: new Date("2026-05-03T00:00:00.000Z")
+      })
+    });
+    expect(tx.mistake.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.mistake.upsert).toHaveBeenCalledWith({
+      where: { visitorId_questionId: { visitorId: "visitor1", questionId: judgmentQuestionId() } },
+      create: expect.objectContaining({
+        visitorId: "visitor1",
+        questionId: judgmentQuestionId(),
+        wrongCount: 1,
+        consecutiveCorrectCount: 0,
+        isMastered: false
+      }),
+      update: expect.objectContaining({
+        wrongCount: { increment: 1 },
+        consecutiveCorrectCount: 0,
+        isMastered: false
+      })
+    });
+    expect(result.status).toBe("submitted");
+    expect(result.scorePercent).toBe(66.67);
+    expect(result.isPassed).toBe(true);
+    expect(result.questions[0]).toHaveProperty("correctAnswers");
+    expect(result.questions[0]).toHaveProperty("explanationMd");
+    expect(result.questions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: judgmentQuestionId(), isCorrect: false, submittedAnswers: ["B"] })
+      ])
+    );
+  });
+
+  it("returns existing review result on duplicate submit without writing mistakes again", async () => {
+    const tx = transactionMock({ exam: examAttemptRecord({ status: "submitted", scorePercent: new Prisma.Decimal("66.67") }) });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.submit("exam1", {}, identity());
+
+    expect(result.status).toBe("submitted");
+    expect(result.scorePercent).toBe(66.67);
+    expect(tx.examAttempt.update).not.toHaveBeenCalled();
+    expect(tx.mistake.upsert).not.toHaveBeenCalled();
+  });
+
+  it("prevents visitors from accessing another visitor's exam", async () => {
+    const tx = transactionMock({ exam: null });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    await expect(service.get("exam1", identity())).rejects.toThrow(NotFoundException);
+  });
+});
+
+function identity(): RequestIdentity {
+  return { ip: "10.0.0.5", role: "learner", roleLabel: "learner", permissions: [] };
+}
+
+function examService(tx: ReturnType<typeof transactionMock>, config: Pick<ExamConfigService, "getSubjectConfig">) {
+  return new ExamsService(prismaMock(tx) as never, config as ExamConfigService, () => new Date("2026-05-03T00:00:00.000Z"));
+}
+
+function configService(questionCounts: { judgment: number; single: number; multiple: number }) {
+  return {
+    getSubjectConfig: jest.fn().mockReturnValue({
+      durationMinutes: 45,
+      passScorePercent: 60,
+      questionCounts
+    })
+  };
+}
+
+function prismaMock(tx: ReturnType<typeof transactionMock>) {
+  return {
+    $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) => callback(tx))
+  };
+}
+
+function transactionMock(options: { activeExam?: unknown; exam?: unknown } = {}) {
+  return {
+    visitor: {
+      findUnique: jest.fn().mockResolvedValue({ id: "visitor1", ip: "10.0.0.5" })
+    },
+    question: {
+      findMany: jest.fn()
+    },
+    examAttempt: {
+      findFirst: jest.fn().mockResolvedValue(options.activeExam ?? null),
+      findUnique: jest.fn().mockResolvedValue(options.exam ?? null),
+      create: jest.fn().mockImplementation(({ data }) => Promise.resolve(examAttemptRecord(data))),
+      update: jest.fn().mockImplementation(({ data }) => Promise.resolve(examAttemptRecord(data)))
+    },
+    mistake: {
+      upsert: jest.fn().mockResolvedValue({ id: "mistake1" })
+    }
+  };
+}
+
+function examAttemptRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "exam1",
+    visitorId: "visitor1",
+    subject: "programming",
+    language: "java",
+    level: "entry",
+    configSnapshot: {
+      durationMinutes: 45,
+      passScorePercent: 60,
+      questionCounts: { judgment: 1, single: 1, multiple: 1 }
+    },
+    questionSnapshot: [singleQuestion(), multipleQuestion(), judgmentQuestion()],
+    answers: {},
+    flaggedQuestionIds: [],
+    status: "in_progress",
+    scorePercent: null,
+    isPassed: null,
+    startedAt: new Date("2026-05-03T00:00:00.000Z"),
+    deadlineAt: new Date("2026-05-03T00:45:00.000Z"),
+    submittedAt: null,
+    updatedAt: new Date("2026-05-03T00:00:00.000Z"),
+    ...overrides
+  };
+}
+
+function questionPool(type: string, count: number) {
+  return Array.from({ length: count }, (_, index) =>
+    questionRecord({
+      id: `${index + 1}${index + 1}${index + 1}${index + 1}${index + 1}${index + 1}${index + 1}${index + 1}-1111-4111-8111-111111111111`,
+      type
+    })
+  );
+}
+
+function singleQuestion() {
+  return questionRecord({ id: singleQuestionId(), type: "single", correctAnswers: ["B"] });
+}
+
+function multipleQuestion() {
+  return questionRecord({
+    id: multipleQuestionId(),
+    type: "multiple",
+    options: [
+      { key: "A", text: "A" },
+      { key: "B", text: "B" },
+      { key: "C", text: "C" }
+    ],
+    correctAnswers: ["A", "C"]
+  });
+}
+
+function judgmentQuestion() {
+  return questionRecord({
+    id: judgmentQuestionId(),
+    type: "judgment",
+    options: [
+      { key: "A", text: "True" },
+      { key: "B", text: "False" }
+    ],
+    correctAnswers: ["A"]
+  });
+}
+
+function questionRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: singleQuestionId(),
+    sourceCode: null,
+    subject: "programming",
+    language: "java",
+    level: "entry",
+    type: "single",
+    stemMd: "Question stem",
+    options: [
+      { key: "A", text: "A" },
+      { key: "B", text: "B" }
+    ],
+    correctAnswers: ["B"],
+    explanationMd: "Because",
+    memo: null,
+    tags: ["tag"],
+    status: "published",
+    createdByIp: "10.0.0.1",
+    totalAttempts: 0,
+    correctAttempts: 0,
+    createdAt: new Date("2026-05-02T00:00:00.000Z"),
+    updatedAt: new Date("2026-05-02T00:00:00.000Z"),
+    ...overrides
+  };
+}
+
+function singleQuestionId() {
+  return "11111111-1111-4111-8111-111111111111";
+}
+
+function multipleQuestionId() {
+  return "22222222-2222-4222-8222-222222222222";
+}
+
+function judgmentQuestionId() {
+  return "33333333-3333-4333-8333-333333333333";
+}
