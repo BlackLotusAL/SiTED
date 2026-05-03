@@ -16,8 +16,27 @@ const OPTIONS = [
   { key: "D", label: "LinkedList" }
 ];
 
+interface AdminOption {
+  key: string;
+  label: string;
+  correct?: boolean;
+}
+
 export function AdminQuestionsPage() {
   const [stem, setStem] = useState(STEM_SAMPLE);
+  const [options, setOptions] = useState<AdminOption[]>(OPTIONS);
+
+  function updateOptionLabel(key: string, label: string) {
+    setOptions((currentOptions) =>
+      currentOptions.map((option) => (option.key === key ? { ...option, label } : option))
+    );
+  }
+
+  function updateOptionCorrect(key: string, correct: boolean) {
+    setOptions((currentOptions) =>
+      currentOptions.map((option) => (option.key === key ? { ...option, correct } : option))
+    );
+  }
 
   return (
     <div className="editor-layout admin-editor-layout">
@@ -68,11 +87,16 @@ export function AdminQuestionsPage() {
         <MarkdownEditor onChange={setStem} value={stem} />
 
         <div className="option-editor" aria-label="选项编辑">
-          {OPTIONS.map((option) => (
+          {options.map((option) => (
             <label className="option-entry" key={option.key}>
-              <input defaultChecked={option.correct} type="checkbox" aria-label={`${option.key} 为正确答案`} />
+              <input
+                checked={Boolean(option.correct)}
+                onChange={(event) => updateOptionCorrect(option.key, event.target.checked)}
+                type="checkbox"
+                aria-label={`${option.key} 为正确答案`}
+              />
               <span>{option.key}</span>
-              <input defaultValue={option.label} />
+              <input value={option.label} onChange={(event) => updateOptionLabel(option.key, event.target.value)} />
             </label>
           ))}
         </div>
@@ -98,7 +122,7 @@ export function AdminQuestionsPage() {
         <h2>实时预览</h2>
         <MarkdownPreview value={stem} />
         <div className="preview-options">
-          {OPTIONS.map((option) => (
+          {options.map((option) => (
             <div className={option.correct ? "preview-option correct" : "preview-option"} key={option.key}>
               {option.key}. {option.label}
             </div>
