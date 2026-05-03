@@ -61,6 +61,10 @@ type ExamAttemptRecord = Omit<ExamAttempt, "configSnapshot" | "questionSnapshot"
   questionSnapshot: Prisma.JsonValue;
   answers: Prisma.JsonValue;
 };
+type ExamListRecord = Pick<
+  ExamAttempt,
+  "id" | "subject" | "language" | "level" | "status" | "scorePercent" | "isPassed" | "startedAt" | "deadlineAt" | "submittedAt"
+>;
 
 const EXAM_QUESTION_TYPES: QuestionType[] = ["single", "multiple", "judgment"];
 export const EXAM_NOW_PROVIDER = Symbol("EXAM_NOW_PROVIDER");
@@ -75,9 +79,50 @@ export class ExamsService {
     @Inject(EXAM_NOW_PROVIDER) private readonly now: NowProvider
   ) {}
 
+  async list(identity: RequestIdentity) {
+    return this.withSerializableRetry(async (tx) => {
+      const visitor = await this.requireVisitor(tx, identity);
+      const exams = await tx.examAttempt.findMany({
+        where: { visitorId: visitor.id },
+        select: {
+          id: true,
+          subject: true,
+          language: true,
+          level: true,
+          status: true,
+          scorePercent: true,
+          isPassed: true,
+          startedAt: true,
+          deadlineAt: true,
+          submittedAt: true
+        },
+        orderBy: { startedAt: "desc" },
+        take: 100
+      });
+
+      return { items: exams.map(toExamListItem) };
+    });
+  }
+
   async create(input: unknown, identity: RequestIdentity) {
     const normalized = normalizeCreateInput(input);
-    return this.withSerializableRetry((tx) => this.createInTransaction(tx, normalized, identity));
+    try {
+      return await this.withSerializableRetry((tx) => this.createInTransaction(tx, normalized, identity));
+    } catch (error) {
+      if (!isPrismaUniqueConflict(error)) {
+        throw error;
+      }
+
+      return this.withSerializableRetry(async (tx) => {
+        const visitor = await this.requireVisitor(tx, identity);
+        const active = await this.findActiveExam(tx, visitor.id);
+        if (active === null) {
+          throw error;
+        }
+
+        return this.toExamResponse(await this.submitExpiredExamIfNeeded(tx, visitor.id, active));
+      });
+    }
   }
 
   async get(id: string, identity: RequestIdentity) {
@@ -151,13 +196,7 @@ export class ExamsService {
 
   private async createInTransaction(tx: TransactionLike, normalized: NormalizedCreateInput, identity: RequestIdentity) {
     const visitor = await this.requireVisitor(tx, identity);
-    const active = await tx.examAttempt.findFirst({
-      where: {
-        visitorId: visitor.id,
-        status: "in_progress"
-      },
-      orderBy: { startedAt: "desc" }
-    });
+    const active = await this.findActiveExam(tx, visitor.id);
 
     if (active !== null) {
       const activeExam = await this.submitExpiredExamIfNeeded(tx, visitor.id, active as ExamAttemptRecord);
@@ -244,6 +283,18 @@ export class ExamsService {
     return exam as ExamAttemptRecord;
   }
 
+  private async findActiveExam(tx: TransactionLike, visitorId: string): Promise<ExamAttemptRecord | null> {
+    const active = await tx.examAttempt.findFirst({
+      where: {
+        visitorId,
+        status: "in_progress"
+      },
+      orderBy: { startedAt: "desc" }
+    });
+
+    return active === null ? null : (active as ExamAttemptRecord);
+  }
+
   private async submitExpiredExamIfNeeded(
     tx: TransactionLike,
     visitorId: string,
@@ -257,7 +308,7 @@ export class ExamsService {
   }
 
   private isExpired(exam: Pick<ExamAttemptRecord, "deadlineAt">): boolean {
-    return this.now().getTime() > exam.deadlineAt.getTime();
+    return this.now().getTime() >= exam.deadlineAt.getTime();
   }
 
   private async submitExam(
@@ -592,6 +643,21 @@ function decimalToNumber(value: ExamAttempt["scorePercent"]): number | null {
   return value === null ? null : Number(value);
 }
 
+function toExamListItem(exam: ExamListRecord) {
+  return {
+    id: exam.id,
+    subject: exam.subject,
+    language: exam.language,
+    level: exam.level,
+    status: exam.status,
+    scorePercent: decimalToNumber(exam.scorePercent),
+    isPassed: exam.isPassed,
+    startedAt: exam.startedAt,
+    deadlineAt: exam.deadlineAt,
+    submittedAt: exam.submittedAt
+  };
+}
+
 function numberFromRecord(record: Record<string, unknown>, key: QuestionType): number {
   const value = record[key];
   if (typeof value !== "number") {
@@ -610,6 +676,10 @@ function invalidExamRequest(message: string): BadRequestException {
 
 function isSerializableConflict(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2034";
+}
+
+function isPrismaUniqueConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

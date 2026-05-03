@@ -43,6 +43,36 @@ describe("ExamsController HTTP", () => {
     }
   });
 
+  it("returns current visitor exam history without snapshot or answer details", async () => {
+    const prisma = prismaMock({
+      exams: [examAttemptRecord({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", status: "submitted", scorePercent: 66.67 })]
+    });
+    const app = await createApp(prisma);
+
+    try {
+      const response = await fetchJson(app, "/api/exams");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        items: [
+          {
+            id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            subject: "programming",
+            language: "java",
+            level: "entry",
+            status: "submitted",
+            scorePercent: 66.67
+          }
+        ]
+      });
+      expect(response.body.items[0]).not.toHaveProperty("questionSnapshot");
+      expect(response.body.items[0]).not.toHaveProperty("answers");
+      expect(response.body.items[0]).not.toHaveProperty("questions");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("wires PATCH answers and POST submit bodies to the service through real HTTP", async () => {
     const prisma = prismaMock({ exam: examAttemptRecord() });
     const app = await createApp(prisma);
@@ -162,6 +192,7 @@ interface PrismaMock {
   question: { findMany: jest.Mock };
   examAttempt: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
     findUnique: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
@@ -170,7 +201,7 @@ interface PrismaMock {
   $transaction: jest.Mock;
 }
 
-function prismaMock(options: { exam?: unknown } = {}): PrismaMock {
+function prismaMock(options: { exam?: unknown; exams?: unknown[] } = {}): PrismaMock {
   const prisma: PrismaMock = {
     ipRoleBinding: {
       findUnique: jest.fn().mockResolvedValue(null)
@@ -184,6 +215,7 @@ function prismaMock(options: { exam?: unknown } = {}): PrismaMock {
     },
     examAttempt: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue(options.exams ?? []),
       findUnique: jest.fn().mockResolvedValue(options.exam === undefined ? examAttemptRecord() : options.exam),
       create: jest.fn().mockImplementation(({ data }) => Promise.resolve(examAttemptRecord(data))),
       update: jest.fn().mockImplementation(({ data }) =>
