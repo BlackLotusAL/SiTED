@@ -71,4 +71,20 @@ describe("api client", () => {
     expect(requestInit.body).toBe(form);
     expect((requestInit.headers as Headers).get("content-type")).toBeNull();
   });
+
+  it("sends raw string bodies without JSON stringifying or content-type injection", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200
+      })
+    );
+    const api = createApiClient({ fetcher: fetchMock });
+
+    await api.post("/raw", "abc");
+
+    const [, requestInit] = fetchMock.mock.calls[0]!;
+    expect(requestInit.body).toBe("abc");
+    expect((requestInit.headers as Headers).get("content-type")).toBeNull();
+  });
 });
