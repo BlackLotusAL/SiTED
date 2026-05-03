@@ -1,8 +1,23 @@
 import { Injectable } from "@nestjs/common";
-import type { ExamAttempt, PracticeAttempt, Question } from "@prisma/client";
+import type { ExamAttempt } from "@prisma/client";
 import type { RequestIdentity } from "../identity/identity.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { toMasteryStatus } from "../practice/practice.service";
+
+const QUESTION_SUMMARY_SELECT = {
+  id: true,
+  sourceCode: true,
+  subject: true,
+  language: true,
+  level: true,
+  type: true,
+  stemMd: true,
+  memo: true,
+  tags: true,
+  status: true,
+  totalAttempts: true,
+  correctAttempts: true
+} as const;
 
 @Injectable()
 export class ReviewService {
@@ -16,7 +31,16 @@ export class ReviewService {
 
     const mistakes = await this.prisma.mistake.findMany({
       where: { visitorId: visitor.id },
-      include: { question: true },
+      select: {
+        id: true,
+        questionId: true,
+        wrongCount: true,
+        consecutiveCorrectCount: true,
+        isMastered: true,
+        lastWrongAt: true,
+        masteredAt: true,
+        question: { select: QUESTION_SUMMARY_SELECT }
+      },
       orderBy: [{ isMastered: "asc" }, { lastWrongAt: "desc" }, { updatedAt: "desc" }]
     });
 
@@ -43,7 +67,14 @@ export class ReviewService {
 
     const bookmarks = await this.prisma.bookmark.findMany({
       where: { visitorId: visitor.id },
-      include: { question: true },
+      select: {
+        id: true,
+        questionId: true,
+        note: true,
+        tags: true,
+        createdAt: true,
+        question: { select: QUESTION_SUMMARY_SELECT }
+      },
       orderBy: { createdAt: "desc" }
     });
 
@@ -68,12 +99,33 @@ export class ReviewService {
     const [practiceAttempts, examAttempts] = await Promise.all([
       this.prisma.practiceAttempt.findMany({
         where: { visitorId: visitor.id },
-        include: { question: true },
+        select: {
+          id: true,
+          questionId: true,
+          selectedKeys: true,
+          isCorrect: true,
+          mode: true,
+          durationSec: true,
+          createdAt: true,
+          question: { select: QUESTION_SUMMARY_SELECT }
+        },
         orderBy: { createdAt: "desc" },
         take: 100
       }),
       this.prisma.examAttempt.findMany({
         where: { visitorId: visitor.id },
+        select: {
+          id: true,
+          subject: true,
+          language: true,
+          level: true,
+          status: true,
+          scorePercent: true,
+          isPassed: true,
+          startedAt: true,
+          deadlineAt: true,
+          submittedAt: true
+        },
         orderBy: { startedAt: "desc" },
         take: 100
       })
@@ -94,9 +146,38 @@ export class ReviewService {
   }
 }
 
-type PracticeAttemptWithQuestion = PracticeAttempt & { question: Question };
+type QuestionSummaryRecord = {
+  id: string;
+  sourceCode: string | null;
+  subject: string;
+  language: string | null;
+  level: string;
+  type: string;
+  stemMd: string;
+  memo: string | null;
+  tags: string[];
+  status: string;
+  totalAttempts: number;
+  correctAttempts: number;
+};
 
-function toPracticeRecord(attempt: PracticeAttemptWithQuestion) {
+type PracticeAttemptRecord = {
+  id: string;
+  questionId: string;
+  selectedKeys: string[];
+  isCorrect: boolean;
+  mode: string;
+  durationSec: number | null;
+  createdAt: Date;
+  question: QuestionSummaryRecord;
+};
+
+type ExamAttemptRecord = Pick<
+  ExamAttempt,
+  "id" | "subject" | "language" | "level" | "status" | "scorePercent" | "isPassed" | "startedAt" | "deadlineAt" | "submittedAt"
+>;
+
+function toPracticeRecord(attempt: PracticeAttemptRecord) {
   return {
     kind: "practice" as const,
     id: attempt.id,
@@ -110,7 +191,7 @@ function toPracticeRecord(attempt: PracticeAttemptWithQuestion) {
   };
 }
 
-function toExamRecord(attempt: ExamAttempt) {
+function toExamRecord(attempt: ExamAttemptRecord) {
   return {
     kind: "exam" as const,
     id: attempt.id,
@@ -126,7 +207,7 @@ function toExamRecord(attempt: ExamAttempt) {
   };
 }
 
-function toQuestionSummary(question: Question) {
+function toQuestionSummary(question: QuestionSummaryRecord) {
   return {
     id: question.id,
     sourceCode: question.sourceCode,
