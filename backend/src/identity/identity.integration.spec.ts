@@ -61,13 +61,16 @@ describe("identity integration", () => {
 
   it("does not run identity middleware for non-API routes", async () => {
     process.env.ALLOWED_CIDR = "10.0.0.0/8";
-    const app = await createApp();
+    const prisma = prismaMock();
+    const app = await createApp(prisma);
 
     try {
       const response = await fetchJson(app, "/non-api");
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ ok: true });
+      expect(prisma.ipRoleBinding.findUnique).not.toHaveBeenCalled();
+      expect(prisma.visitor.upsert).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -111,12 +114,12 @@ class GuardController {
 })
 class GuardTestModule {}
 
-async function createApp(): Promise<INestApplication> {
+async function createApp(prisma = prismaMock()): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule]
   })
     .overrideProvider(PrismaService)
-    .useValue(prismaMock())
+    .useValue(prisma)
     .compile();
   const app = moduleRef.createNestApplication();
   app.setGlobalPrefix("api");

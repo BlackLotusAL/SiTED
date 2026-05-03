@@ -12,11 +12,6 @@ export class IdentityMiddleware implements NestMiddleware {
   constructor(private readonly identityService: IdentityService) {}
 
   async use(req: IdentityRequest, _res: Response, next: NextFunction): Promise<void> {
-    if (!req.originalUrl.startsWith("/api/")) {
-      next();
-      return;
-    }
-
     try {
       const ip = resolveRequestIp(req, { trustedProxyCidrs: parseCsv(process.env.TRUSTED_PROXY_CIDRS) });
       assertIpAllowed(ip, parseCsv(process.env.ALLOWED_CIDR));

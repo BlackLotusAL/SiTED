@@ -12,6 +12,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(IdentityMiddleware).forRoutes({ path: "*", method: RequestMethod.ALL });
+    // Nest expands this wildcard under the global "api" prefix, so identity runs only for /api routes.
+    consumer.apply(IdentityMiddleware).forRoutes({ path: "/{*apiPath}", method: RequestMethod.ALL });
   }
 }

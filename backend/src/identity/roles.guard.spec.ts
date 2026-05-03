@@ -36,13 +36,24 @@ describe("identity roles", () => {
     });
   });
 
-  it("defaults to learner when no valid binding exists", async () => {
+  it("uses learner binding when IP is not a system admin", async () => {
     process.env.SYSTEM_ADMIN_IPS = "";
-    const prisma = prismaMock({ bindingRole: "system_admin" });
+    const prisma = prismaMock({ bindingRole: "learner" });
     const service = new IdentityService(prisma);
 
     await expect(service.resolveIdentity("10.0.0.7")).resolves.toMatchObject({
       ip: "10.0.0.7",
+      role: "learner"
+    });
+  });
+
+  it("defaults to learner when no binding exists", async () => {
+    process.env.SYSTEM_ADMIN_IPS = "";
+    const prisma = prismaMock({ bindingRole: null });
+    const service = new IdentityService(prisma);
+
+    await expect(service.resolveIdentity("10.0.0.6")).resolves.toMatchObject({
+      ip: "10.0.0.6",
       role: "learner"
     });
   });
