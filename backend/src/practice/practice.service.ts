@@ -36,6 +36,8 @@ type QuestionOption = {
   text: string;
 };
 
+const MAX_DURATION_SEC = 2147483647;
+
 @Injectable()
 export class PracticeService {
   constructor(private readonly prisma: PrismaService) {}
@@ -199,16 +201,20 @@ function normalizeDurationSec(value: unknown): number | undefined {
     return undefined;
   }
   if (typeof value === "number") {
-    if (!Number.isInteger(value) || value < 0) {
-      throw invalidSubmission("durationSec must be a non-negative integer");
-    }
-    return value;
+    return assertDurationSec(value);
   }
   if (typeof value === "string" && /^\d+$/.test(value)) {
-    return Number(value);
+    return assertDurationSec(Number(value));
   }
 
   throw invalidSubmission("durationSec must be a non-negative integer");
+}
+
+function assertDurationSec(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_DURATION_SEC) {
+    throw invalidSubmission("durationSec must be a non-negative integer within database range");
+  }
+  return value;
 }
 
 function assertQuestionCanBeScored(question: ScoreableQuestion): Set<string> {
