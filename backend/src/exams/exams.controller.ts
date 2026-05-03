@@ -7,6 +7,11 @@ import { ExamsService, type ExamAnswerSaveInput, type ExamCreateInput, type Exam
 export class ExamsController {
   constructor(private readonly examsService: ExamsService) {}
 
+  @Get()
+  list(@Req() request: IdentityRequest) {
+    return this.examsService.list(requireIdentity(request));
+  }
+
   @Post()
   create(@Body() body: ExamCreateInput, @Req() request: IdentityRequest) {
     return this.examsService.create(body, requireIdentity(request));

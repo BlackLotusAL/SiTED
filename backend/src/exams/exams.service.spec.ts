@@ -164,6 +164,32 @@ describe("ExamsService", () => {
     expect(result.status).toBe("submitted");
   });
 
+  it("treats the exact deadline as expired and submits saved answers", async () => {
+    const deadlineExam = examAttemptRecord({
+      answers: { [singleQuestionId()]: ["B"] },
+      deadlineAt: new Date("2026-05-03T00:00:00.000Z")
+    });
+    const tx = transactionMock({ exam: deadlineExam });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.submit(
+      "exam1",
+      { answers: { [singleQuestionId()]: ["A"], [multipleQuestionId()]: ["A", "C"], [judgmentQuestionId()]: ["A"] } },
+      identity()
+    );
+
+    expect(tx.examAttempt.update).toHaveBeenCalledWith({
+      where: { id: "exam1" },
+      data: expect.objectContaining({
+        answers: { [singleQuestionId()]: ["B"] },
+        scorePercent: new Prisma.Decimal("33.33"),
+        status: "submitted"
+      })
+    });
+    expect(result.status).toBe("submitted");
+    expect(result.answers).toEqual({ [singleQuestionId()]: ["B"] });
+  });
+
   it("submits expired exams using saved answers instead of new request answers", async () => {
     const expiredExam = examAttemptRecord({
       answers: { [singleQuestionId()]: ["B"] },
@@ -268,6 +294,66 @@ describe("ExamsService", () => {
     expect(tx.mistake.upsert).not.toHaveBeenCalled();
   });
 
+  it("lists current visitor exam history without question snapshot details", async () => {
+    const tx = transactionMock({
+      exams: [
+        examAttemptRecord({ id: "exam-new", status: "submitted", scorePercent: new Prisma.Decimal("66.67"), isPassed: true }),
+        examAttemptRecord({ id: "exam-old", status: "abandoned" })
+      ]
+    });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.list(identity());
+
+    expect(tx.examAttempt.findMany).toHaveBeenCalledWith({
+      where: { visitorId: "visitor1" },
+      select: {
+        id: true,
+        subject: true,
+        language: true,
+        level: true,
+        status: true,
+        scorePercent: true,
+        isPassed: true,
+        startedAt: true,
+        deadlineAt: true,
+        submittedAt: true
+      },
+      orderBy: { startedAt: "desc" },
+      take: 100
+    });
+    expect(result.items).toEqual([
+      expect.objectContaining({ id: "exam-new", scorePercent: 66.67, isPassed: true }),
+      expect.objectContaining({ id: "exam-old", scorePercent: null })
+    ]);
+    expect(result.items[0]).not.toHaveProperty("questionSnapshot");
+    expect(result.items[0]).not.toHaveProperty("answers");
+    expect(result.items[0]).not.toHaveProperty("questions");
+  });
+
+  it("recovers from an active exam unique conflict by returning the newly active exam", async () => {
+    const uniqueConflict = Object.assign(new Error("unique violation"), {
+      code: "P2002",
+      meta: { target: "ExamAttempt_single_active_per_visitor" }
+    });
+    const activeExam = examAttemptRecord({ id: "active-after-conflict" });
+    const tx = transactionMock({ activeExam });
+    tx.examAttempt.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(activeExam);
+    tx.question.findMany.mockImplementation(({ where }: { where: { type: string } }) =>
+      Promise.resolve(questionPool(where.type, 1))
+    );
+    tx.examAttempt.create.mockRejectedValueOnce(uniqueConflict);
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.create({ subject: "programming", language: "java", level: "entry" }, identity());
+
+    expect(result.id).toBe("active-after-conflict");
+    expect(tx.examAttempt.findFirst).toHaveBeenLastCalledWith({
+      where: { visitorId: "visitor1", status: "in_progress" },
+      orderBy: { startedAt: "desc" }
+    });
+  });
+
   it("prevents visitors from accessing another visitor's exam", async () => {
     const tx = transactionMock({ exam: null });
     const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
@@ -300,7 +386,7 @@ function prismaMock(tx: ReturnType<typeof transactionMock>) {
   };
 }
 
-function transactionMock(options: { activeExam?: unknown; exam?: unknown } = {}) {
+function transactionMock(options: { activeExam?: unknown; exam?: unknown; exams?: unknown[] } = {}) {
   return {
     visitor: {
       findUnique: jest.fn().mockResolvedValue({ id: "visitor1", ip: "10.0.0.5" })
@@ -310,6 +396,7 @@ function transactionMock(options: { activeExam?: unknown; exam?: unknown } = {})
     },
     examAttempt: {
       findFirst: jest.fn().mockResolvedValue(options.activeExam ?? null),
+      findMany: jest.fn().mockResolvedValue(options.exams ?? []),
       findUnique: jest.fn().mockResolvedValue(options.exam ?? null),
       create: jest.fn().mockImplementation(({ data }) => Promise.resolve(examAttemptRecord(data))),
       update: jest.fn().mockImplementation(({ where, data }) => {
