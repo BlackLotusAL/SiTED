@@ -3,6 +3,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { PlaceholderPage } from "./components/PlaceholderPage";
 import type { Identity } from "./api/types";
 import { AppShell } from "./layout/AppShell";
+import { AdminQuestionsPage } from "./pages/AdminQuestionsPage";
+import { AdminSettingsPage } from "./pages/AdminSettingsPage";
+import { AdminStatsPage } from "./pages/AdminStatsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ExamPage } from "./pages/ExamPage";
 import { PracticePage } from "./pages/PracticePage";
@@ -49,5 +52,8 @@ const LEARNER_PAGES: Record<string, ReactElement> = {
   "/practice": <PracticePage />,
   "/recite": <RecitePage />,
   "/review": <ReviewPage />,
-  "/exam": <ExamPage />
+  "/exam": <ExamPage />,
+  "/admin/questions": <AdminQuestionsPage />,
+  "/admin/stats": <AdminStatsPage />,
+  "/admin/settings": <AdminSettingsPage />
 };
