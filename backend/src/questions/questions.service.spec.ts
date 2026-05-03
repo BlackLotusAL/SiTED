@@ -175,6 +175,20 @@ describe("QuestionsService", () => {
     expect(prisma.question.update).toHaveBeenNthCalledWith(1, { where: { id: "q1" }, data: { status: "published" } });
     expect(prisma.question.update).toHaveBeenNthCalledWith(2, { where: { id: "q1" }, data: { status: "archived" } });
   });
+
+  it("maps publish and archive P2025 races to unified not found responses", async () => {
+    const missingRace = Object.assign(new Error("record disappeared"), { code: "P2025" });
+    const prisma = {
+      question: {
+        findUnique: jest.fn().mockResolvedValue(questionRecord({ status: "draft" })),
+        update: jest.fn().mockRejectedValue(missingRace)
+      }
+    };
+    const service = new QuestionsService(prisma as never, markdownStub());
+
+    await expect(service.publishAdmin("q1")).rejects.toThrow(NotFoundException);
+    await expect(service.archiveAdmin("q1")).rejects.toThrow(NotFoundException);
+  });
 });
 
 function validQuestionInput(overrides: Record<string, unknown> = {}) {

@@ -129,10 +129,12 @@ export class QuestionsService {
     }
     normalizeQuestionInput(current, "published");
 
-    const question = await this.prisma.question.update({
-      where: { id },
-      data: { status: "published" }
-    });
+    const question = await this.mapPrismaWriteErrors(() =>
+      this.prisma.question.update({
+        where: { id },
+        data: { status: "published" }
+      })
+    );
 
     return this.toAdminDetail(question);
   }
@@ -143,10 +145,12 @@ export class QuestionsService {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
 
-    const question = await this.prisma.question.update({
-      where: { id },
-      data: { status: "archived" }
-    });
+    const question = await this.mapPrismaWriteErrors(() =>
+      this.prisma.question.update({
+        where: { id },
+        data: { status: "archived" }
+      })
+    );
 
     return this.toAdminDetail(question);
   }
