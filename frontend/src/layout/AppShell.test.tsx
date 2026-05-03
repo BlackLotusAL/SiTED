@@ -87,8 +87,15 @@ describe("AppShell", () => {
   it("allows content admins to access admin questions and stats but not system settings", async () => {
     const questions = renderApp("/admin/questions", Promise.resolve(contentAdminIdentity));
 
-    expect(await screen.findByText("Admin question maintenance placeholder for Task 10.")).toBeInTheDocument();
+    expect(await screen.findByLabelText("题干（支持 Markdown 语法）")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "实时预览" })).toBeInTheDocument();
     questions.unmount();
+
+    const stats = renderApp("/admin/stats", Promise.resolve(contentAdminIdentity));
+
+    expect(await screen.findByRole("heading", { name: "题库统计" })).toBeInTheDocument();
+    expect(screen.getByRole("figure", { name: "访问用户 近 7 天趋势" })).toBeInTheDocument();
+    stats.unmount();
 
     const settings = renderApp("/admin/settings", Promise.resolve(contentAdminIdentity));
 
