@@ -1,8 +1,12 @@
-const js = require("@eslint/js");
-const globals = require("globals");
-const tseslint = require("typescript-eslint");
+import js from "@eslint/js";
+import globals from "globals";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import tseslint from "typescript-eslint";
 
-module.exports = tseslint.config(
+const configDir = dirname(fileURLToPath(import.meta.url));
+
+export default tseslint.config(
   { ignores: ["dist", "coverage"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -16,7 +20,7 @@ module.exports = tseslint.config(
       },
       parserOptions: {
         projectService: true,
-        tsconfigRootDir: __dirname
+        tsconfigRootDir: configDir
       }
     }
   }
