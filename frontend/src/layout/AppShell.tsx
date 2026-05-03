@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { Identity } from "../api/types";
+import { routeTitleForPath } from "../routes/config";
+import type { AppShellOutletContext } from "../routes/ProtectedRoute";
 import { Sidebar } from "./Sidebar";
 
 interface AppShellProps {
@@ -16,23 +18,15 @@ const FALLBACK_IDENTITY: Identity = {
   permissions: []
 };
 
-const ROUTE_TITLES: Array<{ path: string; title: string }> = [
-  { path: "/admin/questions", title: "题目管理" },
-  { path: "/admin/stats", title: "运营看板" },
-  { path: "/admin/settings", title: "系统设置" },
-  { path: "/questions", title: "题库" },
-  { path: "/practice", title: "练习" },
-  { path: "/recite", title: "背诵" },
-  { path: "/review", title: "复习" },
-  { path: "/exam", title: "模拟考" },
-  { path: "/", title: "首页" }
-];
-
 export function AppShell({ loadIdentity = loadCurrentIdentity }: AppShellProps) {
   const location = useLocation();
   const [identity, setIdentity] = useState<Identity>(FALLBACK_IDENTITY);
   const [identityStatus, setIdentityStatus] = useState<"loading" | "ready" | "error">("loading");
-  const pageTitle = useMemo(() => resolveRouteTitle(location.pathname), [location.pathname]);
+  const pageTitle = useMemo(() => routeTitleForPath(location.pathname), [location.pathname]);
+  const outletContext = useMemo<AppShellOutletContext>(
+    () => ({ identity, identityStatus }),
+    [identity, identityStatus]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -87,14 +81,10 @@ export function AppShell({ loadIdentity = loadCurrentIdentity }: AppShellProps) 
           </div>
         </header>
 
-        <Outlet />
+        <Outlet context={outletContext} />
       </main>
     </div>
   );
-}
-
-function resolveRouteTitle(pathname: string): string {
-  return ROUTE_TITLES.find((route) => pathname === route.path || pathname.startsWith(`${route.path}/`))?.title ?? "首页";
 }
 
 function loadCurrentIdentity(): Promise<Identity> {

@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
+import App from "../App";
 import { AppShell } from "./AppShell";
 import type { Identity } from "../api/types";
 
@@ -17,6 +18,13 @@ const adminIdentity: Identity = {
   role: "system_admin",
   roleLabel: "系统管理员",
   permissions: ["question:browse", "question:create", "ip_role:write"]
+};
+
+const contentAdminIdentity: Identity = {
+  ip: "10.0.0.8",
+  role: "content_admin",
+  roleLabel: "题库管理员",
+  permissions: ["question:browse", "question:create", "stats:view_basic"]
 };
 
 describe("AppShell", () => {
@@ -59,6 +67,42 @@ describe("AppShell", () => {
     await waitFor(() => expect(screen.getByText("无法加载身份，已使用访客学习者模式")).toBeInTheDocument());
     expect(within(screen.getByLabelText("当前身份信息")).getByText("学习者")).toBeInTheDocument();
   });
+
+  it("does not render admin route content while identity is loading", () => {
+    renderApp("/admin/questions", new Promise<Identity>(() => undefined));
+
+    expect(screen.getByRole("heading", { name: "题目管理" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "正在加载身份..." })).toBeInTheDocument();
+    expect(screen.queryByText("Admin question maintenance placeholder for Task 10.")).not.toBeInTheDocument();
+  });
+
+  it("blocks learners from rendering admin route placeholders on direct URL access", async () => {
+    renderApp("/admin/questions", Promise.resolve(learnerIdentity));
+
+    expect(await screen.findByText("权限不足")).toBeInTheDocument();
+    expect(screen.getByText("当前身份无权访问该页面。")).toBeInTheDocument();
+    expect(screen.queryByText("Admin question maintenance placeholder for Task 10.")).not.toBeInTheDocument();
+  });
+
+  it("allows content admins to access admin questions and stats but not system settings", async () => {
+    const questions = renderApp("/admin/questions", Promise.resolve(contentAdminIdentity));
+
+    expect(await screen.findByText("Admin question maintenance placeholder for Task 10.")).toBeInTheDocument();
+    questions.unmount();
+
+    const settings = renderApp("/admin/settings", Promise.resolve(contentAdminIdentity));
+
+    expect(await screen.findByText("权限不足")).toBeInTheDocument();
+    expect(screen.queryByText("System settings placeholder for Task 10.")).not.toBeInTheDocument();
+    settings.unmount();
+  });
+
+  it("shows an unavailable identity placeholder instead of admin content when identity loading fails", async () => {
+    renderApp("/admin/stats", Promise.reject(new Error("offline")));
+
+    expect(await screen.findByText("身份不可用")).toBeInTheDocument();
+    expect(screen.queryByText("Admin statistics placeholder for Task 10.")).not.toBeInTheDocument();
+  });
 });
 
 function renderShell(path: string, identity: Identity) {
@@ -67,6 +111,14 @@ function renderShell(path: string, identity: Identity) {
       <Routes>
         <Route path="*" element={<AppShell loadIdentity={() => Promise.resolve(identity)} />} />
       </Routes>
+    </MemoryRouter>
+  );
+}
+
+function renderApp(path: string, identity: Promise<Identity>) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <App loadIdentity={() => identity.catch((error: unknown) => Promise.reject(error))} />
     </MemoryRouter>
   );
 }

@@ -1,54 +1,18 @@
-import {
-  BarChart3,
-  BookOpenCheck,
-  ClipboardList,
-  FileQuestion,
-  GraduationCap,
-  Home,
-  Library,
-  Settings,
-  ShieldCheck
-} from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { BrandMark } from "../components/BrandMark";
 import type { Identity } from "../api/types";
-import type { Role } from "../domain/labels";
+import { APP_ROUTES, canAccessRoute, type AppRouteConfig } from "../routes/config";
 
 export interface SidebarProps {
   identity: Identity;
   identityStatus: "loading" | "ready" | "error";
 }
 
-interface NavItem {
-  label: string;
-  to: string;
-  icon: typeof Home;
-  minimumRole?: Role;
-}
-
-const LEARNER_ITEMS: NavItem[] = [
-  { label: "首页", to: "/", icon: Home },
-  { label: "题库", to: "/questions", icon: Library },
-  { label: "练习", to: "/practice", icon: GraduationCap },
-  { label: "背诵", to: "/recite", icon: BookOpenCheck },
-  { label: "复习", to: "/review", icon: ClipboardList },
-  { label: "模拟考", to: "/exam", icon: FileQuestion }
-];
-
-const ADMIN_ITEMS: NavItem[] = [
-  { label: "题目管理", to: "/admin/questions", icon: ShieldCheck, minimumRole: "content_admin" },
-  { label: "运营看板", to: "/admin/stats", icon: BarChart3, minimumRole: "content_admin" },
-  { label: "系统设置", to: "/admin/settings", icon: Settings, minimumRole: "system_admin" }
-];
-
-const ROLE_RANK: Record<Role, number> = {
-  learner: 0,
-  content_admin: 1,
-  system_admin: 2
-};
+const LEARNER_ITEMS = APP_ROUTES.filter((route) => route.section === "learner");
+const ADMIN_ITEMS = APP_ROUTES.filter((route) => route.section === "admin");
 
 export function Sidebar({ identity, identityStatus }: SidebarProps) {
-  const adminItems = ADMIN_ITEMS.filter((item) => canAccess(identity.role, item.minimumRole));
+  const adminItems = ADMIN_ITEMS.filter((item) => canAccessRoute(identity.role, item));
 
   return (
     <aside className="sidebar" aria-label="主导航">
@@ -62,16 +26,16 @@ export function Sidebar({ identity, identityStatus }: SidebarProps) {
 
       <nav className="nav-list">
         {LEARNER_ITEMS.map((item) => (
-          <SidebarLink item={item} key={item.to} />
+          <SidebarLink item={item} key={item.path} />
         ))}
 
         {adminItems.length > 0 ? (
-          <>
+          <div className="nav-list">
             <div className="nav-section">管理</div>
             {adminItems.map((item) => (
-              <SidebarLink item={item} key={item.to} />
+              <SidebarLink item={item} key={item.path} />
             ))}
-          </>
+          </div>
         ) : null}
       </nav>
 
@@ -88,19 +52,15 @@ export function Sidebar({ identity, identityStatus }: SidebarProps) {
   );
 }
 
-function SidebarLink({ item }: { item: NavItem }) {
+function SidebarLink({ item }: { item: AppRouteConfig }) {
   const Icon = item.icon;
 
   return (
-    <NavLink className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")} end={item.to === "/"} to={item.to}>
+    <NavLink className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")} end={item.path === "/"} to={item.path}>
       <span className="nav-icon">
         <Icon aria-hidden="true" />
       </span>
-      {item.label}
+      {item.navLabel}
     </NavLink>
   );
-}
-
-function canAccess(role: Role, minimumRole: Role | undefined): boolean {
-  return minimumRole === undefined || ROLE_RANK[role] >= ROLE_RANK[minimumRole];
 }

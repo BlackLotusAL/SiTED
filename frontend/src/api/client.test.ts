@@ -39,4 +39,36 @@ describe("api client", () => {
 
     await expect(api.get("/broken")).rejects.toEqual(new ApiError("HTTP_500", "Request failed with status 500", 500));
   });
+
+  it("normalizes network errors", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    const api = createApiClient({ fetcher: fetchMock });
+
+    await expect(api.get("/offline")).rejects.toEqual(new ApiError("NETWORK_ERROR", "Network request failed", 0));
+  });
+
+  it("returns undefined for successful empty or non-JSON responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const api = createApiClient({ fetcher: fetchMock });
+
+    await expect(api.get("/empty")).resolves.toBeUndefined();
+  });
+
+  it("sends FormData bodies without JSON stringifying or content-type injection", async () => {
+    const form = new FormData();
+    form.set("file", new Blob(["x"], { type: "text/plain" }), "question.txt");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200
+      })
+    );
+    const api = createApiClient({ fetcher: fetchMock });
+
+    await api.post("/uploads", form);
+
+    const [, requestInit] = fetchMock.mock.calls[0]!;
+    expect(requestInit.body).toBe(form);
+    expect((requestInit.headers as Headers).get("content-type")).toBeNull();
+  });
 });
