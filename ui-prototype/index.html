@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SiTED UI Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40" role="img">
+              <path class="mark-shield" d="M20 3 34 9.6v13.1c0 7.2-5.4 11.6-14 14.3C11.4 34.3 6 29.9 6 22.7V9.6L20 3Z" />
+              <path class="mark-bolt" d="M15 22.2h5l-1.5 6.8 7.2-11.3h-5l1.5-6.7L15 22.2Z" />
+              <path class="mark-line" d="M12 12.5 20 8.8l8 3.7" />
+            </svg>
+          </div>
+          <div>
+            <strong>SiTED</strong>
+            <span>Trusted Engineering Dojo</span>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-page="dashboard">
+            <span class="nav-icon" data-icon="dashboard"></span>
+            首页
+          </button>
+          <button class="nav-item" data-page="questions">
+            <span class="nav-icon" data-icon="search"></span>
+            题库
+          </button>
+          <button class="nav-item" data-page="practice">
+            <span class="nav-icon" data-icon="practice"></span>
+            练习
+          </button>
+          <button class="nav-item" data-page="review">
+            <span class="nav-icon" data-icon="review"></span>
+            复习
+          </button>
+          <button class="nav-item" data-page="exam">
+            <span class="nav-icon" data-icon="exam"></span>
+            模拟考
+          </button>
+          <div class="nav-section">管理</div>
+          <button class="nav-item" data-page="admin">
+            <span class="nav-icon" data-icon="admin"></span>
+            题目管理
+          </button>
+          <button class="nav-item" data-page="stats">
+            <span class="nav-icon" data-icon="stats"></span>
+            运营看板
+          </button>
+          <button class="nav-item" data-page="settings">
+            <span class="nav-icon" data-icon="settings"></span>
+            系统设置
+          </button>
+        </nav>
+
+        <div class="identity-card">
+          <div class="identity-top">
+            <span>当前身份</span>
+            <strong>系统管理员</strong>
+          </div>
+          <div class="identity-ip">10.42.18.36</div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <h1 id="page-title">首页</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" title="查看通知">
+              <span class="nav-icon" data-icon="bell"></span>
+            </button>
+            <button class="ghost-button">Light</button>
+            <button class="primary-button" data-page-jump="practice">开始练习</button>
+          </div>
+        </header>
+
+        <section class="page active" id="dashboard" data-title="首页">
+          <div class="dashboard-grid">
+            <div class="overview-panel">
+              <div class="overview-copy">
+                <p class="hero-label">今日训练</p>
+                <h2>继续完成科目二工作级练习</h2>
+                <p>今天已完成 28 道题，正确率稳定在 82%。错题复习还剩 7 道，建议先完成复习再进入模拟考。</p>
+                <div class="button-row">
+                  <button class="primary-button" data-page-jump="practice">继续练习</button>
+                  <button class="secondary-button" data-page-jump="review">复习错题</button>
+                </div>
+              </div>
+              <div class="training-visual" aria-label="月度训练日历">
+                <div class="visual-header">
+                  <h3>训练日历</h3>
+                  <strong data-month-total>312 题</strong>
+                </div>
+                <div class="month-switcher">
+                  <button class="icon-button small" data-month-shift="-1" title="上一个月">
+                    <span class="nav-icon" data-icon="chevron-left"></span>
+                  </button>
+                  <span data-month-label>2026 年 5 月</span>
+                  <button class="icon-button small" data-month-shift="1" title="下一个月">
+                    <span class="nav-icon" data-icon="chevron-right"></span>
+                  </button>
+                </div>
+                <div class="calendar-grid" data-calendar-grid></div>
+                <div class="visual-axis">
+                  <span data-month-start>5 月 1 日</span>
+                  <span data-month-end>5 月 31 日</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <span>今日作答</span>
+              <strong>28</strong>
+              <small>比昨日多 9 题</small>
+            </div>
+            <div class="metric-card accent-blue">
+              <span>正确率</span>
+              <strong>82%</strong>
+              <small>近 30 天 +6%</small>
+            </div>
+            <div class="metric-card accent-amber">
+              <span>待复习错题</span>
+              <strong>7</strong>
+              <small>3 题已连续答对 2 次</small>
+            </div>
+            <div class="metric-card accent-coral">
+              <span>最近模拟考</span>
+              <strong>76</strong>
+              <small>科目三 · Python</small>
+            </div>
+          </div>
+
+          <div class="content-grid two-columns">
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>三类科目的可练习状态</h3>
+                </div>
+                <button class="text-button" data-page-jump="questions">查看题库</button>
+              </div>
+              <div class="coverage-list">
+                <div class="coverage-row">
+                  <span class="coverage-dot violet"></span>
+                  <div>
+                    <strong>科目二（编程知识）</strong>
+                    <small>C / C++ / Python / Java，12 个组合</small>
+                  </div>
+                  <meter min="0" max="100" value="78"></meter>
+                </div>
+                <div class="coverage-row">
+                  <span class="coverage-dot blue"></span>
+                  <div>
+                    <strong>科目三（安全质量隐私）</strong>
+                    <small>工作级、专业级，8 个组合</small>
+                  </div>
+                  <meter min="0" max="100" value="64"></meter>
+                </div>
+                <div class="coverage-row">
+                  <span class="coverage-dot amber"></span>
+                  <div>
+                    <strong>科目四（重构知识）</strong>
+                    <small>不区分语言，专业级</small>
+                  </div>
+                  <meter min="0" max="100" value="91"></meter>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="section-label">下一步</p>
+                  <h3>推荐工作流</h3>
+                </div>
+              </div>
+              <div class="task-stack">
+                <button class="task-row" data-page-jump="review">
+                  <span class="task-index">01</span>
+                  <div>
+                    <strong>先复习未掌握错题</strong>
+                    <small>7 道题，预计 6 分钟</small>
+                  </div>
+                </button>
+                <button class="task-row" data-page-jump="questions">
+                  <span class="task-index">02</span>
+                  <div>
+                    <strong>补齐 Python 安全题源</strong>
+                    <small>筛选工作级，多选题优先</small>
+                  </div>
+                </button>
+                <button class="task-row" data-page-jump="exam">
+                  <span class="task-index">03</span>
+                  <div>
+                    <strong>进入 45 分钟模拟考</strong>
+                    <small>交卷后自动生成复盘</small>
+                  </div>
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="questions" data-title="题库">
+          <div class="panel">
+            <div class="panel-heading compact">
+              <div>
+                <h2>按题源组合快速筛选</h2>
+              </div>
+              <button class="primary-button" data-page-jump="practice">练习当前筛选集</button>
+            </div>
+            <div class="filter-bar">
+              <label>
+                科目
+                <select>
+                  <option>科目二（编程知识）</option>
+                  <option>科目三（安全质量隐私）</option>
+                  <option>科目四（重构知识）</option>
+                </select>
+              </label>
+              <label>
+                语言
+                <select>
+                  <option>Java</option>
+                  <option>Python</option>
+                  <option>C++</option>
+                  <option>C</option>
+                </select>
+              </label>
+              <label>
+                级别
+                <select>
+                  <option>工作级</option>
+                  <option>入门级</option>
+                  <option>专业级</option>
+                </select>
+              </label>
+              <label>
+                题型
+                <select>
+                  <option>全部题型</option>
+                  <option>单选题</option>
+                  <option>多选题</option>
+                  <option>判断题</option>
+                </select>
+              </label>
+              <label class="search-field">
+                关键词
+                <input type="search" value="线程安全" />
+              </label>
+            </div>
+          </div>
+
+          <div class="question-layout">
+            <section class="question-list">
+              <article class="question-card selected">
+                <div class="question-meta">
+                  <span>单选题</span>
+                  <span>集合</span>
+                  <span>线程安全</span>
+                </div>
+                <h3>下面哪个集合适合在并发读写场景下作为线程安全 Map 使用？</h3>
+                <p>考察 Java 集合框架中的并发容器选择。</p>
+                <div class="question-footer">
+                  <span>正确率 74%</span>
+                  <button class="icon-button small" title="收藏"><span class="nav-icon" data-icon="bookmark"></span></button>
+                </div>
+              </article>
+              <article class="question-card">
+                <div class="question-meta">
+                  <span>多选题</span>
+                  <span>异常处理</span>
+                </div>
+                <h3>关于 checked exception 和 unchecked exception，下列说法正确的是？</h3>
+                <p>考察异常分类、编译期约束和 API 设计边界。</p>
+                <div class="question-footer">
+                  <span>正确率 61%</span>
+                  <button class="icon-button small" title="收藏"><span class="nav-icon" data-icon="bookmark"></span></button>
+                </div>
+              </article>
+              <article class="question-card">
+                <div class="question-meta">
+                  <span>判断题</span>
+                  <span>内存模型</span>
+                </div>
+                <h3>volatile 能保证复合操作的原子性。</h3>
+                <p>用于辨析可见性、有序性和原子性的差异。</p>
+                <div class="question-footer">
+                  <span>正确率 58%</span>
+                  <button class="icon-button small" title="收藏"><span class="nav-icon" data-icon="bookmark"></span></button>
+                </div>
+              </article>
+            </section>
+
+            <aside class="detail-panel panel">
+              <p class="section-label">题目预览</p>
+              <h2>ConcurrentHashMap 的适用场景</h2>
+              <pre><code>Map&lt;String, Integer&gt; counts = new ConcurrentHashMap&lt;&gt;();</code></pre>
+              <p>这道题命中 “科目二 / Java / 工作级” 组合，适合作为集合和并发基础的练习题。</p>
+              <div class="preview-option">A. ArrayList</div>
+              <div class="preview-option">B. HashMap</div>
+              <div class="preview-option correct">C. ConcurrentHashMap</div>
+              <div class="preview-option">D. LinkedList</div>
+              <div class="tag-row">
+                <span>集合</span>
+                <span>线程安全</span>
+                <span>并发容器</span>
+              </div>
+              <div class="button-row">
+                <button class="primary-button" data-page-jump="practice">练习此题</button>
+                <button class="secondary-button">背诵</button>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="page" id="practice" data-title="练习">
+          <div class="practice-shell">
+            <section class="practice-main panel">
+              <div class="question-progress">
+                <span>科目二 · Java · 工作级</span>
+                <strong>第 12 / 40 题</strong>
+              </div>
+              <h2>下面哪个集合适合在并发读写场景下作为线程安全 Map 使用？</h2>
+              <pre><code>Map&lt;String, Integer&gt; cache = new ________();</code></pre>
+              <div class="options" role="group" aria-label="答案选项">
+                <button class="option" data-answer="wrong"><span>A</span>ArrayList</button>
+                <button class="option" data-answer="wrong"><span>B</span>HashMap</button>
+                <button class="option" data-answer="correct"><span>C</span>ConcurrentHashMap</button>
+                <button class="option" data-answer="wrong"><span>D</span>LinkedList</button>
+              </div>
+              <div class="practice-actions">
+                <button class="primary-button" id="submit-answer">提交答案</button>
+                <button class="secondary-button">下一题</button>
+              </div>
+              <div class="answer-panel" id="answer-panel" hidden>
+                <strong>回答正确</strong>
+                <p>ConcurrentHashMap 面向并发访问场景，能在高并发读写时降低锁竞争。速记：并发集合优先找 Concurrent 前缀。</p>
+              </div>
+            </section>
+
+            <aside class="side-stack">
+              <section class="panel mini-panel">
+                <p class="section-label">当前筛选</p>
+                <h3>线程安全 · 集合</h3>
+                <p>本组题源共 96 道，已完成 12 道。</p>
+                <div class="linear-progress"><span style="width: 30%"></span></div>
+              </section>
+              <section class="panel mini-panel">
+                <p class="section-label">快捷状态</p>
+                <div class="status-list">
+                  <span><b></b> 已答 12</span>
+                  <span><b class="amber"></b> 待复习 7</span>
+                  <span><b class="blue"></b> 收藏 18</span>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </section>
+
+        <section class="page" id="review" data-title="复习">
+          <div class="review-toolbar">
+              <div class="segmented review-tabs" role="tablist" aria-label="复习类型">
+                <button class="active" data-review-tab="mistakes">错题</button>
+                <button data-review-tab="bookmarks">收藏</button>
+                <button data-review-tab="records">记录</button>
+              </div>
+          </div>
+
+          <div class="review-panels">
+            <section class="review-table panel review-panel active" data-review-panel="mistakes">
+              <div class="table-head">
+                <span>题目</span>
+                <span>题源</span>
+                <span>错次</span>
+                <span>掌握状态</span>
+                <span>操作</span>
+              </div>
+              <div class="table-row">
+                <strong>volatile 能保证复合操作的原子性。</strong>
+                <span>科目二 / Java</span>
+                <span>4</span>
+                <span class="status-chip warning">连续答对 2 次</span>
+                <button class="text-button" data-page-jump="practice">重练</button>
+              </div>
+              <div class="table-row">
+                <strong>SQL 注入防护中的参数化查询边界</strong>
+                <span>科目三 / Python</span>
+                <span>2</span>
+                <span class="status-chip needs-work">未掌握</span>
+                <button class="text-button" data-page-jump="practice">重练</button>
+              </div>
+              <div class="table-row">
+                <strong>重构时何时提取方法</strong>
+                <span>科目四</span>
+                <span>1</span>
+                <span class="status-chip success">已掌握</span>
+                <button class="text-button">取消掌握</button>
+              </div>
+            </section>
+
+            <section class="review-table panel review-panel" data-review-panel="bookmarks">
+              <div class="table-head bookmarks">
+                <span>收藏题目</span>
+                <span>题源</span>
+                <span>题型</span>
+                <span>最近练习</span>
+                <span>操作</span>
+              </div>
+              <div class="table-row bookmarks">
+                <strong>线程池拒绝策略的选择</strong>
+                <span>科目二 / Java</span>
+                <span>多选题</span>
+                <span>今天 10:26</span>
+                <button class="text-button" data-page-jump="practice">练习</button>
+              </div>
+              <div class="table-row bookmarks">
+                <strong>隐私数据脱敏的最小化原则</strong>
+                <span>科目三 / Python</span>
+                <span>单选题</span>
+                <span>昨天 16:40</span>
+                <button class="text-button" data-page-jump="practice">练习</button>
+              </div>
+            </section>
+
+            <section class="review-table panel review-panel" data-review-panel="records">
+              <div class="table-head records">
+                <span>练习记录</span>
+                <span>题源</span>
+                <span>题数</span>
+                <span>结果</span>
+                <span>操作</span>
+              </div>
+              <div class="table-row records">
+                <strong>科目二工作级专项</strong>
+                <span>科目二 / Python</span>
+                <span>20</span>
+                <span class="status-chip warning">正确率 70%</span>
+                <button class="text-button">查看</button>
+              </div>
+              <div class="table-row records">
+                <strong>科目二 Java 集合专项</strong>
+                <span>科目二 / Java</span>
+                <span>40</span>
+                <span class="status-chip success">正确率 88%</span>
+                <button class="text-button">查看</button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="exam" data-title="模拟考">
+          <div class="exam-layout">
+            <section class="panel exam-paper">
+              <div class="question-progress">
+                <span>模拟考 · 科目三 · Python · 工作级</span>
+                <strong>剩余 31:42</strong>
+              </div>
+              <h2>以下哪些措施可以降低用户输入进入 SQL 查询时的安全风险？</h2>
+              <div class="options multi">
+                <button class="option selected"><span>A</span>使用参数化查询</button>
+                <button class="option"><span>B</span>拼接前删除空格</button>
+                <button class="option selected"><span>C</span>限制数据库账号权限</button>
+                <button class="option"><span>D</span>在前端隐藏输入框</button>
+              </div>
+              <div class="practice-actions">
+                <button class="secondary-button">标记疑问</button>
+                <button class="primary-button">保存并下一题</button>
+              </div>
+            </section>
+
+            <aside class="panel answer-sheet">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="section-label">答题卡</p>
+                  <h3>40 题 · 合格线 60%</h3>
+                </div>
+              </div>
+              <div class="sheet-grid">
+                <button class="done">1</button><button class="done">2</button><button class="done">3</button><button class="flagged">4</button>
+                <button class="current">5</button><button>6</button><button>7</button><button>8</button>
+                <button>9</button><button>10</button><button>11</button><button>12</button>
+                <button>13</button><button>14</button><button>15</button><button>16</button>
+                <button>17</button><button>18</button><button>19</button><button>20</button>
+              </div>
+              <div class="legend">
+                <span><b class="done"></b>已答</span>
+                <span><b class="current"></b>当前</span>
+                <span><b class="flagged"></b>疑问</span>
+              </div>
+              <button class="danger-button">交卷</button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="page" id="admin" data-title="题目管理">
+          <div class="editor-layout">
+            <section class="panel editor-form">
+              <div class="panel-heading compact">
+                <div>
+                  <h2>新增题目</h2>
+                </div>
+                <span class="status-chip">草稿</span>
+              </div>
+              <div class="form-grid">
+                <label>
+                  科目
+                  <select>
+                    <option>科目二（编程知识）</option>
+                    <option>科目三（安全质量隐私）</option>
+                    <option>科目四（重构知识）</option>
+                  </select>
+                </label>
+                <label>
+                  语言
+                  <select>
+                    <option>Java</option>
+                    <option>Python</option>
+                    <option>C++</option>
+                    <option>C</option>
+                  </select>
+                </label>
+                <label>
+                  级别
+                  <select>
+                    <option>工作级</option>
+                    <option>入门级</option>
+                    <option>专业级</option>
+                  </select>
+                </label>
+                <label>
+                  题型
+                  <select>
+                    <option>单选题</option>
+                    <option>多选题</option>
+                    <option>判断题</option>
+                  </select>
+                </label>
+              </div>
+              <label class="block-label">
+                题干（支持 Markdown 语法）
+                <div class="markdown-editor" contenteditable="true" role="textbox" aria-label="题干 Markdown 编辑器">
+                  <p>下面哪个集合适合在并发读写场景下作为线程安全 Map 使用？</p>
+                  <pre class="code-block language-java"><code><span class="token keyword">Map</span>&lt;<span class="token type">String</span>, <span class="token type">Integer</span>&gt; counts = <span class="token keyword">new</span> <span class="token type">ConcurrentHashMap</span>&lt;&gt;();
+counts.<span class="token function">merge</span>(key, <span class="token number">1</span>, <span class="token type">Integer</span>::sum);</code></pre>
+                </div>
+              </label>
+              <div class="option-editor">
+                <div class="option-entry">
+                  <input type="checkbox" aria-label="A 为正确答案" />
+                  <span>A</span>
+                  <input value="ArrayList" />
+                </div>
+                <div class="option-entry">
+                  <input type="checkbox" aria-label="B 为正确答案" />
+                  <span>B</span>
+                  <input value="HashMap" />
+                </div>
+                <div class="option-entry">
+                  <input type="checkbox" aria-label="C 为正确答案" checked />
+                  <span>C</span>
+                  <input value="ConcurrentHashMap" />
+                </div>
+                <div class="option-entry">
+                  <input type="checkbox" aria-label="D 为正确答案" />
+                  <span>D</span>
+                  <input value="LinkedList" />
+                </div>
+              </div>
+              <div class="editor-action-strip">
+                <button class="secondary-button">保存草稿</button>
+                <button class="primary-button">发布题目</button>
+              </div>
+            </section>
+
+            <aside class="panel preview-panel">
+              <p class="section-label">实时预览</p>
+              <h3>下面哪个集合适合在并发读写场景下作为线程安全 Map 使用？</h3>
+              <pre class="code-block language-java"><code><span class="token keyword">Map</span>&lt;<span class="token type">String</span>, <span class="token type">Integer</span>&gt; counts = <span class="token keyword">new</span> <span class="token type">ConcurrentHashMap</span>&lt;&gt;();
+counts.<span class="token function">merge</span>(key, <span class="token number">1</span>, <span class="token type">Integer</span>::sum);</code></pre>
+              <div class="preview-option">A. ArrayList</div>
+              <div class="preview-option">B. HashMap</div>
+              <div class="preview-option correct">C. ConcurrentHashMap</div>
+              <div class="preview-option">D. LinkedList</div>
+              <p class="memo-box">速记：并发集合记 Concurrent 前缀。</p>
+            </aside>
+          </div>
+        </section>
+
+        <section class="page" id="stats" data-title="运营看板">
+          <div class="stats-kpis">
+            <div class="metric-card">
+              <span>当前题库数量</span>
+              <strong>12,486</strong>
+              <small>已发布 11,920</small>
+            </div>
+            <div class="metric-card accent-blue">
+              <span>今日访问用户</span>
+              <strong>86</strong>
+              <small>较昨日 +12</small>
+            </div>
+            <div class="metric-card accent-violet">
+              <span>今日练习题数</span>
+              <strong>1,284</strong>
+              <small>人均 14.9 题</small>
+            </div>
+            <div class="metric-card accent-amber">
+              <span>今日模拟考</span>
+              <strong>37</strong>
+              <small>完成率 78%</small>
+            </div>
+          </div>
+
+          <div class="stats-layout">
+            <section class="panel bank-stat-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="section-label">题库统计</p>
+                  <h2>题量分布与低正确率题目</h2>
+                </div>
+              </div>
+              <div class="distribution-list">
+                <div class="distribution-row">
+                  <span>科目二（编程知识）</span>
+                  <strong>6,420</strong>
+                  <div class="distribution-track"><i style="width: 74%"></i></div>
+                </div>
+                <div class="distribution-row">
+                  <span>科目三（安全质量隐私）</span>
+                  <strong>3,860</strong>
+                  <div class="distribution-track"><i style="width: 48%"></i></div>
+                </div>
+                <div class="distribution-row">
+                  <span>科目四（重构知识）</span>
+                  <strong>2,206</strong>
+                  <div class="distribution-track"><i style="width: 31%"></i></div>
+                </div>
+              </div>
+              <div class="ranking-panel">
+                <h3>Top10 低正确率题目</h3>
+                <ol class="ranking-list">
+                  <li><span>SQL 注入参数边界</span><b>38%</b></li>
+                  <li><span>volatile 与原子性</span><b>42%</b></li>
+                  <li><span>线程池拒绝策略</span><b>45%</b></li>
+                  <li><span>隐私数据脱敏范围</span><b>47%</b></li>
+                  <li><span>接口拆分原则</span><b>49%</b></li>
+                  <li><span>异常传播边界</span><b>51%</b></li>
+                  <li><span>资源释放顺序</span><b>52%</b></li>
+                  <li><span>最小权限原则</span><b>53%</b></li>
+                  <li><span>并发集合选择</span><b>55%</b></li>
+                  <li><span>重构回归风险</span><b>57%</b></li>
+                </ol>
+              </div>
+            </section>
+
+            <section class="panel trend-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="section-label">训练统计</p>
+                  <h2>近 7 天核心指标趋势</h2>
+                </div>
+              </div>
+              <div class="trend-charts" aria-label="近 7 天三项指标独立趋势图">
+                <div class="mini-chart">
+                  <div class="chart-title"><span><b class="blue"></b>访问用户</span><em>单位：人</em></div>
+                  <div class="mini-y-axis" aria-hidden="true"><span>100</span><span>50</span><span>0</span></div>
+                  <div class="mini-chart-area">
+                    <span class="chart-bar blue" style="height: 58%" data-value="4/27 访问用户 58"></span>
+                    <span class="chart-bar blue" style="height: 64%" data-value="4/28 访问用户 64"></span>
+                    <span class="chart-bar blue" style="height: 61%" data-value="4/29 访问用户 61"></span>
+                    <span class="chart-bar blue" style="height: 79%" data-value="4/30 访问用户 79"></span>
+                    <span class="chart-bar blue" style="height: 83%" data-value="5/1 访问用户 83"></span>
+                    <span class="chart-bar blue" style="height: 91%" data-value="5/2 访问用户 91"></span>
+                    <span class="chart-bar blue" style="height: 86%" data-value="5/3 访问用户 86"></span>
+                  </div>
+                  <div class="mini-x-axis" aria-hidden="true"><span>4/27</span><span>4/28</span><span>4/29</span><span>4/30</span><span>5/1</span><span>5/2</span><span>5/3</span></div>
+                </div>
+                <div class="mini-chart">
+                  <div class="chart-title"><span><b class="violet"></b>练习题数</span><em>单位：题</em></div>
+                  <div class="mini-y-axis" aria-hidden="true"><span>1500</span><span>750</span><span>0</span></div>
+                  <div class="mini-chart-area">
+                    <span class="chart-bar violet" style="height: 51%" data-value="4/27 练习题数 760"></span>
+                    <span class="chart-bar violet" style="height: 63%" data-value="4/28 练习题数 940"></span>
+                    <span class="chart-bar violet" style="height: 59%" data-value="4/29 练习题数 880"></span>
+                    <span class="chart-bar violet" style="height: 69%" data-value="4/30 练习题数 1,030"></span>
+                    <span class="chart-bar violet" style="height: 79%" data-value="5/1 练习题数 1,190"></span>
+                    <span class="chart-bar violet" style="height: 91%" data-value="5/2 练习题数 1,360"></span>
+                    <span class="chart-bar violet" style="height: 86%" data-value="5/3 练习题数 1,284"></span>
+                  </div>
+                  <div class="mini-x-axis" aria-hidden="true"><span>4/27</span><span>4/28</span><span>4/29</span><span>4/30</span><span>5/1</span><span>5/2</span><span>5/3</span></div>
+                </div>
+                <div class="mini-chart">
+                  <div class="chart-title"><span><b class="amber"></b>模拟考</span><em>单位：次</em></div>
+                  <div class="mini-y-axis" aria-hidden="true"><span>50</span><span>25</span><span>0</span></div>
+                  <div class="mini-chart-area">
+                    <span class="chart-bar amber" style="height: 36%" data-value="4/27 模拟考 18"></span>
+                    <span class="chart-bar amber" style="height: 42%" data-value="4/28 模拟考 21"></span>
+                    <span class="chart-bar amber" style="height: 40%" data-value="4/29 模拟考 20"></span>
+                    <span class="chart-bar amber" style="height: 58%" data-value="4/30 模拟考 29"></span>
+                    <span class="chart-bar amber" style="height: 68%" data-value="5/1 模拟考 34"></span>
+                    <span class="chart-bar amber" style="height: 86%" data-value="5/2 模拟考 43"></span>
+                    <span class="chart-bar amber" style="height: 74%" data-value="5/3 模拟考 37"></span>
+                  </div>
+                  <div class="mini-x-axis" aria-hidden="true"><span>4/27</span><span>4/28</span><span>4/29</span><span>4/30</span><span>5/1</span><span>5/2</span><span>5/3</span></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="settings" data-title="系统设置">
+          <div class="settings-layout">
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <h2>IP 固定角色管理</h2>
+                </div>
+                <button class="primary-button">新增绑定</button>
+              </div>
+              <div class="settings-head">
+                <span>IP 地址</span>
+                <span>固定角色</span>
+                <span>权限范围</span>
+              </div>
+              <div class="table-row settings-row">
+                <strong>10.42.18.36</strong>
+                <span>系统管理员</span>
+                <div class="permission-list">
+                  <span>系统配置</span>
+                  <span>用户与角色</span>
+                  <span>题库维护</span>
+                  <span>数据清空</span>
+                </div>
+              </div>
+              <div class="table-row settings-row">
+                <strong>10.42.20.17</strong>
+                <span>题库管理员</span>
+                <div class="permission-list">
+                  <span>题目新增</span>
+                  <span>题目发布</span>
+                  <span>图片维护</span>
+                  <span>运营看板只读</span>
+                </div>
+              </div>
+            </section>
+            <section class="panel danger-zone">
+              <h2>数据清空</h2>
+              <p>清空操作需要确认短语，并写入审计日志。题库范围会同步删除题库图片目录。</p>
+              <button class="danger-button">进入清空流程</button>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
