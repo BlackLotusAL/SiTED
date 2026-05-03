@@ -2,6 +2,7 @@ import type { ApiErrorBody, Identity } from "./types";
 
 type Fetcher = typeof fetch;
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type JsonRequestBody = Exclude<JsonValue, string>;
 type RequestBody = JsonValue | BodyInit;
 
 interface ApiClientOptions {
@@ -126,10 +127,9 @@ function toRequestBody(body: RequestBody): BodyInit {
   return isJsonBody(body) ? JSON.stringify(body) : body;
 }
 
-function isJsonBody(body: unknown): body is JsonValue {
+function isJsonBody(body: unknown): body is JsonRequestBody {
   return (
     body === null ||
-    typeof body === "string" ||
     typeof body === "number" ||
     typeof body === "boolean" ||
     Array.isArray(body) ||
