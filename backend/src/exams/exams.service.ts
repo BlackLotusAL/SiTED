@@ -84,15 +84,19 @@ export class ExamsService {
     return this.withSerializableRetry(async (tx) => {
       const visitor = await this.requireVisitor(tx, identity);
       const exam = await this.findVisitorExam(tx, id, visitor.id);
-      return this.toExamResponse(exam);
+      return this.toExamResponse(await this.submitExpiredExamIfNeeded(tx, visitor.id, exam));
     });
   }
 
   async saveAnswers(id: string, input: unknown, identity: RequestIdentity) {
     return this.withSerializableRetry(async (tx) => {
       const visitor = await this.requireVisitor(tx, identity);
-      const exam = await this.findVisitorExam(tx, id, visitor.id);
+      const current = await this.findVisitorExam(tx, id, visitor.id);
+      const exam = await this.submitExpiredExamIfNeeded(tx, visitor.id, current);
       if (exam.status !== "in_progress") {
+        if (current.status === "in_progress" && exam.status === "submitted") {
+          return this.toExamResponse(exam);
+        }
         throw invalidExamRequest("Only active exams can save answers");
       }
 
@@ -118,50 +122,13 @@ export class ExamsService {
       if (exam.status !== "in_progress") {
         throw invalidExamRequest("Only active exams can be submitted");
       }
+      if (this.isExpired(exam)) {
+        return this.toExamResponse(await this.submitExam(tx, visitor.id, exam, parseAnswers(exam.answers), this.now()));
+      }
 
       const questions = parseQuestionSnapshot(exam.questionSnapshot);
       const answers = normalizeAnswersInput(input, questions, parseAnswers(exam.answers), true);
-      const results = scoreQuestions(questions, answers);
-      const scorePercent = percentage(results.filter((result) => result.isCorrect).length, results.length);
-      const config = parseConfigSnapshot(exam.configSnapshot);
-      const submittedAt = this.now();
-
-      for (const result of results) {
-        if (!result.isCorrect) {
-          await tx.mistake.upsert({
-            where: { visitorId_questionId: { visitorId: visitor.id, questionId: result.question.id } },
-            create: {
-              visitorId: visitor.id,
-              questionId: result.question.id,
-              wrongCount: 1,
-              consecutiveCorrectCount: 0,
-              isMastered: false,
-              lastWrongAt: submittedAt,
-              masteredAt: null
-            },
-            update: {
-              wrongCount: { increment: 1 },
-              consecutiveCorrectCount: 0,
-              isMastered: false,
-              lastWrongAt: submittedAt,
-              masteredAt: null
-            }
-          });
-        }
-      }
-
-      const updated = await tx.examAttempt.update({
-        where: { id },
-        data: {
-          answers,
-          status: "submitted",
-          scorePercent: new Prisma.Decimal(scorePercent.toFixed(2)),
-          isPassed: scorePercent >= config.passScorePercent,
-          submittedAt
-        }
-      });
-
-      return this.toExamResponse(updated as ExamAttemptRecord);
+      return this.toExamResponse(await this.submitExam(tx, visitor.id, exam, answers, this.now()));
     });
   }
 
@@ -187,19 +154,19 @@ export class ExamsService {
     const active = await tx.examAttempt.findFirst({
       where: {
         visitorId: visitor.id,
-        subject: normalized.subject,
-        language: normalized.language,
-        level: normalized.level,
         status: "in_progress"
       },
       orderBy: { startedAt: "desc" }
     });
 
-    if (active !== null && !normalized.abandonExisting) {
-      return this.toExamResponse(active as ExamAttemptRecord);
-    }
     if (active !== null) {
-      await tx.examAttempt.update({ where: { id: active.id }, data: { status: "abandoned" } });
+      const activeExam = await this.submitExpiredExamIfNeeded(tx, visitor.id, active as ExamAttemptRecord);
+      if (activeExam.status === "in_progress" && !normalized.abandonExisting) {
+        return this.toExamResponse(activeExam);
+      }
+      if (activeExam.status === "in_progress") {
+        await tx.examAttempt.update({ where: { id: activeExam.id }, data: { status: "abandoned" } });
+      }
     }
 
     const config = this.configService.getSubjectConfig(normalized.subject);
@@ -275,6 +242,72 @@ export class ExamsService {
       throw new NotFoundException({ code: "EXAM_NOT_FOUND", message: "Exam was not found" });
     }
     return exam as ExamAttemptRecord;
+  }
+
+  private async submitExpiredExamIfNeeded(
+    tx: TransactionLike,
+    visitorId: string,
+    exam: ExamAttemptRecord
+  ): Promise<ExamAttemptRecord> {
+    if (exam.status !== "in_progress" || !this.isExpired(exam)) {
+      return exam;
+    }
+
+    return this.submitExam(tx, visitorId, exam, parseAnswers(exam.answers), this.now());
+  }
+
+  private isExpired(exam: Pick<ExamAttemptRecord, "deadlineAt">): boolean {
+    return this.now().getTime() > exam.deadlineAt.getTime();
+  }
+
+  private async submitExam(
+    tx: TransactionLike,
+    visitorId: string,
+    exam: ExamAttemptRecord,
+    answers: AnswerMap,
+    submittedAt: Date
+  ): Promise<ExamAttemptRecord> {
+    const questions = parseQuestionSnapshot(exam.questionSnapshot);
+    const results = scoreQuestions(questions, answers);
+    const scorePercent = percentage(results.filter((result) => result.isCorrect).length, results.length);
+    const config = parseConfigSnapshot(exam.configSnapshot);
+
+    for (const result of results) {
+      if (!result.isCorrect) {
+        await tx.mistake.upsert({
+          where: { visitorId_questionId: { visitorId, questionId: result.question.id } },
+          create: {
+            visitorId,
+            questionId: result.question.id,
+            wrongCount: 1,
+            consecutiveCorrectCount: 0,
+            isMastered: false,
+            lastWrongAt: submittedAt,
+            masteredAt: null
+          },
+          update: {
+            wrongCount: { increment: 1 },
+            consecutiveCorrectCount: 0,
+            isMastered: false,
+            lastWrongAt: submittedAt,
+            masteredAt: null
+          }
+        });
+      }
+    }
+
+    const updated = await tx.examAttempt.update({
+      where: { id: exam.id },
+      data: {
+        answers,
+        status: "submitted",
+        scorePercent: new Prisma.Decimal(scorePercent.toFixed(2)),
+        isPassed: scorePercent >= config.passScorePercent,
+        submittedAt
+      }
+    });
+
+    return updated as ExamAttemptRecord;
   }
 
   private async withSerializableRetry<T>(operation: (tx: TransactionLike) => Promise<T>): Promise<T> {
@@ -508,7 +541,6 @@ function toActiveQuestion(question: QuestionSnapshot) {
     type: question.type,
     stemMd: question.stemMd,
     options: question.options,
-    memo: question.memo,
     tags: question.tags
   };
 }

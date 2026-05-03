@@ -67,18 +67,41 @@ describe("ExamsService", () => {
     expect(result.questions).toHaveLength(3);
     expect(result.questions[0]).not.toHaveProperty("correctAnswers");
     expect(result.questions[0]).not.toHaveProperty("explanationMd");
+    expect(result.questions[0]).not.toHaveProperty("memo");
   });
 
-  it("reuses an active unfinished exam for the same visitor and source", async () => {
-    const activeExam = examAttemptRecord({ id: "active-exam" });
+  it("reuses any active unfinished exam for the same visitor even when the requested source differs", async () => {
+    const activeExam = examAttemptRecord({ id: "active-exam", subject: "refactoring", language: null, level: "professional" });
     const tx = transactionMock({ activeExam });
     const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
 
     const result = await service.create({ subject: "programming", language: "java", level: "entry" }, identity());
 
     expect(result.id).toBe("active-exam");
+    expect(tx.examAttempt.findFirst).toHaveBeenCalledWith({
+      where: { visitorId: "visitor1", status: "in_progress" },
+      orderBy: { startedAt: "desc" }
+    });
     expect(tx.question.findMany).not.toHaveBeenCalled();
     expect(tx.examAttempt.create).not.toHaveBeenCalled();
+  });
+
+  it("abandons any existing active exam before creating a new one when explicitly requested", async () => {
+    const activeExam = examAttemptRecord({ id: "active-exam", subject: "refactoring", language: null, level: "professional" });
+    const tx = transactionMock({ activeExam });
+    tx.question.findMany.mockImplementation(({ where }: { where: { type: string } }) =>
+      Promise.resolve(questionPool(where.type, 1))
+    );
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.create(
+      { subject: "programming", language: "java", level: "entry", abandonExisting: true },
+      identity()
+    );
+
+    expect(tx.examAttempt.update).toHaveBeenCalledWith({ where: { id: "active-exam" }, data: { status: "abandoned" } });
+    expect(tx.examAttempt.create).toHaveBeenCalled();
+    expect(result.id).toBe("exam1");
   });
 
   it("autosaves valid answers for active exams without scoring", async () => {
@@ -93,6 +116,76 @@ describe("ExamsService", () => {
     });
     expect(result.answers).toEqual({ [singleQuestionId()]: ["B"] });
     expect(result.scorePercent).toBeNull();
+  });
+
+  it("auto-submits an expired active exam on get using saved answers and records unanswered questions as mistakes", async () => {
+    const expiredExam = examAttemptRecord({
+      answers: { [singleQuestionId()]: ["B"] },
+      deadlineAt: new Date("2026-05-02T23:59:59.000Z")
+    });
+    const tx = transactionMock({ exam: expiredExam });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.get("exam1", identity());
+
+    expect(tx.examAttempt.update).toHaveBeenCalledWith({
+      where: { id: "exam1" },
+      data: expect.objectContaining({
+        answers: { [singleQuestionId()]: ["B"] },
+        status: "submitted",
+        scorePercent: new Prisma.Decimal("33.33"),
+        isPassed: false,
+        submittedAt: new Date("2026-05-03T00:00:00.000Z")
+      })
+    });
+    expect(tx.mistake.upsert).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("submitted");
+    expect(result.scorePercent).toBe(33.33);
+  });
+
+  it("does not autosave requested answers when the exam is already expired", async () => {
+    const expiredExam = examAttemptRecord({
+      answers: { [singleQuestionId()]: ["B"] },
+      deadlineAt: new Date("2026-05-02T23:59:59.000Z")
+    });
+    const tx = transactionMock({ exam: expiredExam });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.saveAnswers("exam1", { answers: { [multipleQuestionId()]: ["A", "C"] } }, identity());
+
+    expect(tx.examAttempt.update).toHaveBeenCalledWith({
+      where: { id: "exam1" },
+      data: expect.objectContaining({
+        answers: { [singleQuestionId()]: ["B"] },
+        status: "submitted"
+      })
+    });
+    expect(result.answers).toEqual({ [singleQuestionId()]: ["B"] });
+    expect(result.status).toBe("submitted");
+  });
+
+  it("submits expired exams using saved answers instead of new request answers", async () => {
+    const expiredExam = examAttemptRecord({
+      answers: { [singleQuestionId()]: ["B"] },
+      deadlineAt: new Date("2026-05-02T23:59:59.000Z")
+    });
+    const tx = transactionMock({ exam: expiredExam });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.submit(
+      "exam1",
+      { answers: { [singleQuestionId()]: ["A"], [multipleQuestionId()]: ["A", "C"], [judgmentQuestionId()]: ["A"] } },
+      identity()
+    );
+
+    expect(tx.examAttempt.update).toHaveBeenCalledWith({
+      where: { id: "exam1" },
+      data: expect.objectContaining({
+        answers: { [singleQuestionId()]: ["B"] },
+        scorePercent: new Prisma.Decimal("33.33")
+      })
+    });
+    expect(result.scorePercent).toBe(33.33);
   });
 
   it("rejects invalid answer shapes instead of throwing an internal error", async () => {
@@ -219,7 +312,10 @@ function transactionMock(options: { activeExam?: unknown; exam?: unknown } = {})
       findFirst: jest.fn().mockResolvedValue(options.activeExam ?? null),
       findUnique: jest.fn().mockResolvedValue(options.exam ?? null),
       create: jest.fn().mockImplementation(({ data }) => Promise.resolve(examAttemptRecord(data))),
-      update: jest.fn().mockImplementation(({ data }) => Promise.resolve(examAttemptRecord(data)))
+      update: jest.fn().mockImplementation(({ where, data }) => {
+        const base = where.id === "active-exam" ? options.activeExam : options.exam;
+        return Promise.resolve(examAttemptRecord({ ...(base as Record<string, unknown> | undefined), ...data }));
+      })
     },
     mistake: {
       upsert: jest.fn().mockResolvedValue({ id: "mistake1" })

@@ -14,6 +14,10 @@ type ExamConfigFile = {
   subjects: Record<Subject, ExamSubjectConfig>;
 };
 
+const MAX_DURATION_MINUTES = 240;
+const MAX_TYPE_QUESTION_COUNT = 200;
+const MAX_TOTAL_QUESTION_COUNT = 300;
+
 @Injectable()
 export class ExamConfigService {
   private readonly config: ExamConfigFile;
@@ -83,6 +87,9 @@ function parseExamYaml(content: string): ExamConfigFile {
       if (!isValidSubject(subject)) {
         throw invalidConfig();
       }
+      if (config.subjects![subject] !== undefined) {
+        throw invalidConfig();
+      }
       currentSubject = subject;
       inQuestionCounts = false;
       config.subjects![currentSubject] = {
@@ -132,17 +139,23 @@ function assertConfig(config: ExamConfigFile): void {
     const subjectConfig = config.subjects[subject];
     if (
       subjectConfig === undefined ||
-      !isPositiveInteger(subjectConfig.durationMinutes) ||
-      !isPositiveInteger(subjectConfig.passScorePercent) ||
+      !isIntegerInRange(subjectConfig.durationMinutes, 1, MAX_DURATION_MINUTES) ||
+      !isIntegerInRange(subjectConfig.passScorePercent, 1, 100) ||
       subjectConfig.passScorePercent > 100
     ) {
       throw invalidConfig();
     }
 
+    let totalQuestions = 0;
     for (const type of QUESTION_TYPES) {
-      if (!isPositiveInteger(subjectConfig.questionCounts[type])) {
+      if (!isIntegerInRange(subjectConfig.questionCounts[type], 1, MAX_TYPE_QUESTION_COUNT)) {
         throw invalidConfig();
       }
+      totalQuestions += subjectConfig.questionCounts[type];
+    }
+
+    if (!isIntegerInRange(totalQuestions, 1, MAX_TOTAL_QUESTION_COUNT)) {
+      throw invalidConfig();
     }
   }
 }
@@ -159,8 +172,8 @@ function isQuestionType(value: string): value is QuestionType {
   return QUESTION_TYPES.includes(value as QuestionType);
 }
 
-function isPositiveInteger(value: number): boolean {
-  return Number.isSafeInteger(value) && value > 0;
+function isIntegerInRange(value: number, min: number, max: number): boolean {
+  return Number.isSafeInteger(value) && value >= min && value <= max;
 }
 
 function invalidConfig(): InternalServerErrorException {
