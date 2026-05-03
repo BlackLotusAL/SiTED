@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type Question } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { MarkdownService } from "./markdown.service";
@@ -27,7 +27,9 @@ export interface QuestionListQuery {
 @Injectable()
 export class QuestionsService {
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(MarkdownService)
     private readonly markdown: MarkdownService
   ) {}
 

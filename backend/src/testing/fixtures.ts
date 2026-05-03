@@ -2,6 +2,8 @@ import type { AuditAction, Language, Level, Prisma, QuestionStatus, QuestionType
 
 export const SEED_SOURCE_PREFIX = "SITED-SEED";
 export const SEED_TAG = "seed";
+export const SEED_PRACTICE_MODE = "seed_practice";
+export const SEED_EXAM_FLAG = "sited-seed-exam";
 
 export const seedIps = {
   learner: "10.42.11.10",
@@ -275,7 +277,7 @@ function audit(action: AuditAction, target: string, detail: Prisma.InputJsonObje
     role: "system_admin",
     action,
     target,
-    detail,
+    detail: { ...detail, seedTag: SEED_TAG },
     createdAt: daysAgo(0, 8)
   };
 }

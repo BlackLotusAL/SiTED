@@ -1,11 +1,11 @@
-import { Body, Controller, Get, InternalServerErrorException, Param, ParseUUIDPipe, Patch, Post, Req } from "@nestjs/common";
+import { Body, Controller, Get, Inject, InternalServerErrorException, Param, ParseUUIDPipe, Patch, Post, Req } from "@nestjs/common";
 import type { IdentityRequest } from "../identity/identity.middleware";
 import type { RequestIdentity } from "../identity/identity.service";
 import { ExamsService, type ExamAnswerSaveInput, type ExamCreateInput, type ExamSubmitInput } from "./exams.service";
 
 @Controller("exams")
 export class ExamsController {
-  constructor(private readonly examsService: ExamsService) {}
+  constructor(@Inject(ExamsService) private readonly examsService: ExamsService) {}
 
   @Get()
   list(@Req() request: IdentityRequest) {

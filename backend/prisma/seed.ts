@@ -1,6 +1,9 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
+  SEED_EXAM_FLAG,
+  SEED_PRACTICE_MODE,
   SEED_SOURCE_PREFIX,
+  SEED_TAG,
   buildSeedAuditLogs,
   buildSeedQuestions,
   examConfigSnapshot,
@@ -15,8 +18,8 @@ const prisma = new PrismaClient();
 async function main() {
   await cleanupSeedData();
 
-  await prisma.visitor.createMany({ data: seedVisitors });
-  await prisma.ipRoleBinding.createMany({ data: seedRoleBindings });
+  await upsertVisitors();
+  await upsertRoleBindings();
 
   const questions = await createQuestions();
   const visitors = await prisma.visitor.findMany({ where: { ip: { in: Object.values(seedIps) } } });
@@ -30,61 +33,74 @@ async function main() {
 }
 
 async function cleanupSeedData() {
-  const [questions, visitors] = await Promise.all([
-    prisma.question.findMany({
-      where: { sourceCode: { startsWith: SEED_SOURCE_PREFIX } },
-      select: { id: true }
-    }),
-    prisma.visitor.findMany({
-      where: { ip: { in: Object.values(seedIps) } },
-      select: { id: true }
-    })
-  ]);
-  const questionIds = questions.map((question) => question.id);
-  const visitorIds = visitors.map((visitor) => visitor.id);
-
   await prisma.auditLog.deleteMany({
     where: {
       OR: [
-        { actorIp: { in: Object.values(seedIps) } },
         { target: { startsWith: SEED_SOURCE_PREFIX } },
-        { target: { in: Object.values(seedIps) } }
+        { detail: { path: ["seedTag"], equals: SEED_TAG } }
       ]
     }
   });
-  await prisma.bookmark.deleteMany({ where: seedRelationWhere(visitorIds, questionIds) });
-  await prisma.mistake.deleteMany({ where: seedRelationWhere(visitorIds, questionIds) });
-  await prisma.practiceAttempt.deleteMany({ where: seedRelationWhere(visitorIds, questionIds) });
-  await prisma.examAttempt.deleteMany({ where: { visitorId: { in: visitorIds } } });
-  await prisma.question.deleteMany({ where: { sourceCode: { startsWith: SEED_SOURCE_PREFIX } } });
-  await prisma.ipRoleBinding.deleteMany({ where: { ip: { in: seedRoleBindings.map((binding) => binding.ip) } } });
-  await prisma.visitor.deleteMany({ where: { ip: { in: Object.values(seedIps) } } });
+  await prisma.practiceAttempt.deleteMany({ where: { mode: SEED_PRACTICE_MODE } });
+  await prisma.examAttempt.deleteMany({ where: { flaggedQuestionIds: { has: SEED_EXAM_FLAG } } });
+}
+
+async function upsertVisitors() {
+  for (const visitor of seedVisitors) {
+    await prisma.visitor.upsert({
+      where: { ip: visitor.ip },
+      create: visitor,
+      update: {
+        firstSeenAt: visitor.firstSeenAt,
+        lastSeenAt: visitor.lastSeenAt
+      }
+    });
+  }
+}
+
+async function upsertRoleBindings() {
+  for (const binding of seedRoleBindings) {
+    await prisma.ipRoleBinding.upsert({
+      where: { ip: binding.ip },
+      create: binding,
+      update: {
+        role: binding.role,
+        note: binding.note,
+        updatedByIp: binding.updatedByIp
+      }
+    });
+  }
 }
 
 async function createQuestions(): Promise<Map<string, SeedQuestionRecord>> {
   const questions = new Map<string, SeedQuestionRecord>();
 
   for (const seedQuestion of buildSeedQuestions()) {
-    const created = await prisma.question.create({
-      data: {
+    const data = {
+      subject: seedQuestion.subject,
+      language: seedQuestion.language,
+      level: seedQuestion.level,
+      type: seedQuestion.type,
+      stemMd: seedQuestion.stemMd,
+      options: seedQuestion.options as unknown as Prisma.InputJsonValue,
+      correctAnswers: seedQuestion.correctAnswers,
+      explanationMd: seedQuestion.explanationMd,
+      memo: seedQuestion.memo,
+      tags: seedQuestion.tags,
+      totalAttempts: seedQuestion.totalAttempts,
+      correctAttempts: seedQuestion.correctAttempts,
+      status: seedQuestion.status,
+      createdByIp: seedQuestion.createdByIp
+    };
+    const saved = await prisma.question.upsert({
+      where: { sourceCode: seedQuestion.sourceCode },
+      create: {
         sourceCode: seedQuestion.sourceCode,
-        subject: seedQuestion.subject,
-        language: seedQuestion.language,
-        level: seedQuestion.level,
-        type: seedQuestion.type,
-        stemMd: seedQuestion.stemMd,
-        options: seedQuestion.options as unknown as Prisma.InputJsonValue,
-        correctAnswers: seedQuestion.correctAnswers,
-        explanationMd: seedQuestion.explanationMd,
-        memo: seedQuestion.memo,
-        tags: seedQuestion.tags,
-        totalAttempts: seedQuestion.totalAttempts,
-        correctAttempts: seedQuestion.correctAttempts,
-        status: seedQuestion.status,
-        createdByIp: seedQuestion.createdByIp
-      }
+        ...data
+      },
+      update: data
     });
-    questions.set(created.sourceCode ?? created.id, created);
+    questions.set(saved.sourceCode ?? saved.id, saved);
   }
 
   return questions;
@@ -116,42 +132,30 @@ async function seedActivity(
     ]
   });
 
-  await prisma.mistake.createMany({
-    data: [
-      {
-        visitorId: learnerId,
-        questionId: secondSingle.id,
-        wrongCount: 2,
-        consecutiveCorrectCount: 0,
-        isMastered: false,
-        lastWrongAt: new Date()
-      },
-      {
-        visitorId: learnerId,
-        questionId: firstJudgment.id,
-        wrongCount: 3,
-        consecutiveCorrectCount: 2,
-        isMastered: false,
-        lastWrongAt: new Date()
-      },
-      {
-        visitorId: learnerAltId,
-        questionId: firstMultiple.id,
-        wrongCount: 1,
-        consecutiveCorrectCount: 3,
-        isMastered: true,
-        lastWrongAt: daysAgo(3),
-        masteredAt: daysAgo(1)
-      }
-    ]
+  await upsertMistake(learnerId, secondSingle.id, {
+    wrongCount: 2,
+    consecutiveCorrectCount: 0,
+    isMastered: false,
+    lastWrongAt: new Date(),
+    masteredAt: null
+  });
+  await upsertMistake(learnerId, firstJudgment.id, {
+    wrongCount: 3,
+    consecutiveCorrectCount: 2,
+    isMastered: false,
+    lastWrongAt: new Date(),
+    masteredAt: null
+  });
+  await upsertMistake(learnerAltId, firstMultiple.id, {
+    wrongCount: 1,
+    consecutiveCorrectCount: 3,
+    isMastered: true,
+    lastWrongAt: daysAgo(3),
+    masteredAt: daysAgo(1)
   });
 
-  await prisma.bookmark.createMany({
-    data: [
-      { visitorId: learnerId, questionId: firstSingle.id, note: "Review concurrent collection choice", tags: ["seed"] },
-      { visitorId: learnerId, questionId: firstMultiple.id, note: "Security practice reminder", tags: ["seed", "security"] }
-    ]
-  });
+  await upsertBookmark(learnerId, firstSingle.id, "Review concurrent collection choice", [SEED_TAG]);
+  await upsertBookmark(learnerId, firstMultiple.id, "Security practice reminder", [SEED_TAG, "security"]);
 
   await prisma.examAttempt.createMany({
     data: [
@@ -175,6 +179,7 @@ function submittedExam(visitorId: string, questions: SeedQuestionRecord[]) {
     configSnapshot: examConfigSnapshot,
     questionSnapshot: questions.map(toQuestionSnapshot) as unknown as Prisma.InputJsonValue,
     answers,
+    flaggedQuestionIds: [SEED_EXAM_FLAG],
     status: "submitted" as const,
     scorePercent: new Prisma.Decimal("60.00"),
     isPassed: true,
@@ -195,6 +200,7 @@ function abandonedExam(visitorId: string, questions: SeedQuestionRecord[]) {
     configSnapshot: examConfigSnapshot,
     questionSnapshot: questions.map(toQuestionSnapshot) as unknown as Prisma.InputJsonValue,
     answers: {},
+    flaggedQuestionIds: [SEED_EXAM_FLAG],
     status: "abandoned" as const,
     scorePercent: null,
     isPassed: null,
@@ -227,10 +233,36 @@ function attempt(visitorId: string, questionId: string, selectedKeys: string[], 
     questionId,
     selectedKeys,
     isCorrect,
-    mode: "practice",
+    mode: SEED_PRACTICE_MODE,
     durationSec,
     createdAt: new Date()
   };
+}
+
+async function upsertMistake(
+  visitorId: string,
+  questionId: string,
+  data: {
+    wrongCount: number;
+    consecutiveCorrectCount: number;
+    isMastered: boolean;
+    lastWrongAt: Date;
+    masteredAt: Date | null;
+  }
+) {
+  await prisma.mistake.upsert({
+    where: { visitorId_questionId: { visitorId, questionId } },
+    create: { visitorId, questionId, ...data },
+    update: data
+  });
+}
+
+async function upsertBookmark(visitorId: string, questionId: string, note: string, tags: string[]) {
+  await prisma.bookmark.upsert({
+    where: { visitorId_questionId: { visitorId, questionId } },
+    create: { visitorId, questionId, note, tags },
+    update: { note, tags }
+  });
 }
 
 function requireBySource(questions: Map<string, SeedQuestionRecord>, sourceCode: string): SeedQuestionRecord {
@@ -247,15 +279,6 @@ function requireByIp(visitors: Array<{ id: string; ip: string }>, ip: string): {
     throw new Error(`Missing seed visitor ${ip}`);
   }
   return visitor;
-}
-
-function seedRelationWhere(visitorIds: string[], questionIds: string[]) {
-  return {
-    OR: [
-      { visitorId: { in: visitorIds } },
-      { questionId: { in: questionIds } }
-    ]
-  };
 }
 
 function daysAgo(days: number, hour = 8): Date {

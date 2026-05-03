@@ -3,7 +3,8 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException
+  NotFoundException,
+  Optional
 } from "@nestjs/common";
 import { Prisma, type ExamAttempt, type Question } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
@@ -74,12 +75,18 @@ const OPTION_KEY_RE = /^[A-Z]$/;
 
 @Injectable()
 export class ExamsService {
+  private readonly audit: AuditService;
+
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(ExamConfigService)
     private readonly configService: ExamConfigService,
     @Inject(EXAM_NOW_PROVIDER) private readonly now: NowProvider,
-    private readonly audit: AuditService = new AuditService(prisma)
-  ) {}
+    @Optional() @Inject(AuditService) audit?: AuditService
+  ) {
+    this.audit = audit ?? new AuditService(prisma);
+  }
 
   async list(identity: RequestIdentity) {
     return this.withSerializableRetry(async (tx) => {

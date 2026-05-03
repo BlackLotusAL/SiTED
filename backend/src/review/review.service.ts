@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { ExamAttempt } from "@prisma/client";
 import type { RequestIdentity } from "../identity/identity.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -21,7 +21,7 @@ const QUESTION_SUMMARY_SELECT = {
 
 @Injectable()
 export class ReviewService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async listMistakes(identity: RequestIdentity) {
     const visitor = await this.findVisitor(identity);

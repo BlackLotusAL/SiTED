@@ -42,11 +42,16 @@ const PERMISSION_LABELS: Record<Permission, string> = {
 
 @Injectable()
 export class AdminSettingsService {
+  private readonly audit: AuditService;
+
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService = new AuditService(prisma),
+    @Optional() @Inject(AuditService) audit?: AuditService,
     @Optional() @Inject(QUESTION_UPLOAD_REMOVER) private readonly removeUploads: QuestionUploadRemover = removeQuestionUploads
-  ) {}
+  ) {
+    this.audit = audit ?? new AuditService(prisma);
+  }
 
   async listRoleBindings() {
     const [bindings, systemAdminIps] = await Promise.all([

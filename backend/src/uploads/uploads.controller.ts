@@ -1,4 +1,4 @@
-import { Controller, InternalServerErrorException, Post, Req, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Controller, Inject, InternalServerErrorException, Post, Req, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { AuditService } from "../audit/audit.service";
@@ -11,7 +11,9 @@ import { UploadsService } from "./uploads.service";
 @Roles("content_admin")
 export class UploadsController {
   constructor(
+    @Inject(UploadsService)
     private readonly uploadsService: UploadsService,
+    @Inject(AuditService)
     private readonly audit: AuditService
   ) {}
 

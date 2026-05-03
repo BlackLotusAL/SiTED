@@ -15,6 +15,7 @@ export class AdminStatsService {
   private readonly now: NowProvider;
 
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
     @Optional() @Inject(ADMIN_STATS_NOW_PROVIDER) nowProvider?: NowProvider
   ) {

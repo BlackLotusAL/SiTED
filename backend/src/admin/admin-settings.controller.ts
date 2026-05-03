@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, InternalServerErrorException, Param, Post, Put, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, InternalServerErrorException, Param, Post, Put, Query, Req } from "@nestjs/common";
 import type { IdentityRequest } from "../identity/identity.middleware";
 import type { RequestIdentity } from "../identity/identity.service";
 import { Roles } from "../identity/roles.guard";
@@ -7,7 +7,7 @@ import { AdminSettingsService } from "./admin-settings.service";
 @Controller("admin")
 @Roles("system_admin")
 export class AdminSettingsController {
-  constructor(private readonly settingsService: AdminSettingsService) {}
+  constructor(@Inject(AdminSettingsService) private readonly settingsService: AdminSettingsService) {}
 
   @Get("settings/ip-role-bindings")
   listRoleBindings() {
