@@ -180,7 +180,7 @@ export class ExamsService {
   async abandon(id: string, identity: RequestIdentity) {
     return this.withSerializableRetry(async (tx) => {
       const visitor = await this.requireVisitor(tx, identity);
-      const exam = await this.findVisitorExam(tx, id, visitor.id);
+      const exam = await this.submitExpiredExamIfNeeded(tx, visitor.id, await this.findVisitorExam(tx, id, visitor.id));
       if (exam.status !== "in_progress") {
         return this.toExamResponse(exam);
       }

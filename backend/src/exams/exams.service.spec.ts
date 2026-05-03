@@ -214,6 +214,31 @@ describe("ExamsService", () => {
     expect(result.scorePercent).toBe(33.33);
   });
 
+  it("auto-submits an expired active exam on abandon instead of marking it abandoned", async () => {
+    const expiredExam = examAttemptRecord({
+      answers: { [singleQuestionId()]: ["B"] },
+      deadlineAt: new Date("2026-05-02T23:59:59.000Z")
+    });
+    const tx = transactionMock({ exam: expiredExam });
+    const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
+
+    const result = await service.abandon("exam1", identity());
+
+    expect(tx.examAttempt.update).toHaveBeenCalledWith({
+      where: { id: "exam1" },
+      data: expect.objectContaining({
+        answers: { [singleQuestionId()]: ["B"] },
+        status: "submitted",
+        scorePercent: new Prisma.Decimal("33.33"),
+        isPassed: false
+      })
+    });
+    expect(tx.examAttempt.update).not.toHaveBeenCalledWith({ where: { id: "exam1" }, data: { status: "abandoned" } });
+    expect(tx.mistake.upsert).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("submitted");
+    expect(result.scorePercent).toBe(33.33);
+  });
+
   it("rejects invalid answer shapes instead of throwing an internal error", async () => {
     const tx = transactionMock({ exam: examAttemptRecord() });
     const service = examService(tx, configService({ judgment: 1, single: 1, multiple: 1 }));
