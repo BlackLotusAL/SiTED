@@ -431,6 +431,9 @@ function transactionMock(options: { activeExam?: unknown; exam?: unknown; exams?
     },
     mistake: {
       upsert: jest.fn().mockResolvedValue({ id: "mistake1" })
+    },
+    auditLog: {
+      create: jest.fn().mockResolvedValue({})
     }
   };
 }

@@ -1,6 +1,7 @@
 import { INestApplication, Module, NestMiddleware } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { NextFunction, Request, Response } from "express";
+import { AuditService } from "../audit/audit.service";
 import type { Role } from "../domain/constants";
 import { IdentityModule } from "../identity/identity.module";
 import { PrismaService } from "../prisma/prisma.service";
@@ -71,7 +72,8 @@ async function createApp(
     controllers: [AdminQuestionsController],
     providers: [
       { provide: QuestionsService, useValue: questionsService },
-      { provide: ImportExportService, useValue: importExportService }
+      { provide: ImportExportService, useValue: importExportService },
+      { provide: AuditService, useValue: { record: jest.fn().mockResolvedValue({}) } }
     ]
   })
     .overrideProvider(PrismaService)

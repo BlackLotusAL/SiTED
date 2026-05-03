@@ -1,5 +1,6 @@
 import { Body, Controller, Get, InternalServerErrorException, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import type { Role } from "../domain/constants";
+import { AuditService } from "../audit/audit.service";
 import type { IdentityRequest } from "../identity/identity.middleware";
 import { Roles } from "../identity/roles.guard";
 import { ImportExportService } from "./import-export.service";
@@ -10,12 +11,21 @@ import { QuestionsService, type QuestionListQuery } from "../questions/questions
 export class AdminQuestionsController {
   constructor(
     private readonly questionsService: QuestionsService,
-    private readonly importExportService: ImportExportService
+    private readonly importExportService: ImportExportService,
+    private readonly audit: AuditService
   ) {}
 
   @Get("export")
-  export(@Query() query: QuestionListQuery) {
-    return this.importExportService.exportQuestions(query);
+  async export(@Query() query: QuestionListQuery, @Req() request: IdentityRequest) {
+    const identity = requireIdentity(request);
+    const result = await this.importExportService.exportQuestions(query);
+    await this.audit.record({
+      actor: { ip: identity.ip, role: identity.role },
+      action: "question_export",
+      target: "questions",
+      detail: { exportedCount: result.questions.length, filters: query }
+    });
+    return result;
   }
 
   @Post("import/validate")
@@ -35,8 +45,15 @@ export class AdminQuestionsController {
   }
 
   @Post()
-  create(@Body() body: unknown, @Req() request: IdentityRequest) {
-    return this.questionsService.createAdmin(body, requireIdentity(request).ip);
+  async create(@Body() body: unknown, @Req() request: IdentityRequest) {
+    const identity = requireIdentity(request);
+    const question = await this.questionsService.createAdmin(body, identity.ip);
+    await this.audit.record({
+      actor: { ip: identity.ip, role: identity.role },
+      action: "question_create",
+      target: question.id
+    });
+    return question;
   }
 
   @Get(":id")
@@ -45,18 +62,39 @@ export class AdminQuestionsController {
   }
 
   @Patch(":id")
-  update(@Param("id") id: string, @Body() body: unknown) {
-    return this.questionsService.updateAdmin(id, body);
+  async update(@Param("id") id: string, @Body() body: unknown, @Req() request: IdentityRequest) {
+    const identity = requireIdentity(request);
+    const question = await this.questionsService.updateAdmin(id, body);
+    await this.audit.record({
+      actor: { ip: identity.ip, role: identity.role },
+      action: "question_update",
+      target: id
+    });
+    return question;
   }
 
   @Post(":id/publish")
-  publish(@Param("id") id: string) {
-    return this.questionsService.publishAdmin(id);
+  async publish(@Param("id") id: string, @Req() request: IdentityRequest) {
+    const identity = requireIdentity(request);
+    const question = await this.questionsService.publishAdmin(id);
+    await this.audit.record({
+      actor: { ip: identity.ip, role: identity.role },
+      action: "question_publish",
+      target: id
+    });
+    return question;
   }
 
   @Post(":id/archive")
-  archive(@Param("id") id: string) {
-    return this.questionsService.archiveAdmin(id);
+  async archive(@Param("id") id: string, @Req() request: IdentityRequest) {
+    const identity = requireIdentity(request);
+    const question = await this.questionsService.archiveAdmin(id);
+    await this.audit.record({
+      actor: { ip: identity.ip, role: identity.role },
+      action: "question_archive",
+      target: id
+    });
+    return question;
   }
 }
 
