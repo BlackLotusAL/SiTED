@@ -1,10 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { Identity } from "../api/types";
 import App from "../App";
 import { AppShell } from "./AppShell";
-import type { Identity } from "../api/types";
 
 const learnerIdentity: Identity = {
   ip: "10.0.0.5",

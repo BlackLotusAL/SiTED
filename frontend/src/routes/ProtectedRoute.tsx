@@ -1,7 +1,7 @@
-import { useOutletContext } from "react-router-dom";
 import type { ReactElement } from "react";
-import { PlaceholderPage } from "../components/PlaceholderPage";
+import { useOutletContext } from "react-router-dom";
 import type { Identity } from "../api/types";
+import { PlaceholderPage } from "../components/PlaceholderPage";
 import { canAccessRoute, type AppRouteConfig } from "./config";
 
 export interface AppShellOutletContext {
