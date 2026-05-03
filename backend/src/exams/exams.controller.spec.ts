@@ -198,6 +198,7 @@ interface PrismaMock {
     update: jest.Mock;
   };
   mistake: { upsert: jest.Mock };
+  auditLog: { create: jest.Mock };
   $transaction: jest.Mock;
 }
 
@@ -224,6 +225,9 @@ function prismaMock(options: { exam?: unknown; exams?: unknown[] } = {}): Prisma
     },
     mistake: {
       upsert: jest.fn().mockResolvedValue({})
+    },
+    auditLog: {
+      create: jest.fn().mockResolvedValue({})
     },
     $transaction: jest.fn(async (callback: (tx: PrismaMock) => Promise<unknown>) => callback(prisma))
   };

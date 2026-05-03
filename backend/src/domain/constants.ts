@@ -22,9 +22,15 @@ export type ExamStatus = (typeof EXAM_STATUSES)[number];
 export const AUDIT_ACTIONS = [
   "ip_role_upsert",
   "ip_role_delete",
+  "question_create",
+  "question_update",
+  "question_publish",
   "question_import",
+  "question_export",
+  "question_upload",
   "question_archive",
   "data_clear",
+  "exam_abandon",
   "exam_config_reload"
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

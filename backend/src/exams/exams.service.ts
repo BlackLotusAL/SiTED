@@ -6,6 +6,7 @@ import {
   NotFoundException
 } from "@nestjs/common";
 import { Prisma, type ExamAttempt, type Question } from "@prisma/client";
+import { AuditService } from "../audit/audit.service";
 import { QUESTION_TYPES, type Language, type Level, type QuestionType, type Subject } from "../domain/constants";
 import { isCorrectAnswer, isValidSourceCombination } from "../domain/validation";
 import type { RequestIdentity } from "../identity/identity.service";
@@ -76,7 +77,8 @@ export class ExamsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ExamConfigService,
-    @Inject(EXAM_NOW_PROVIDER) private readonly now: NowProvider
+    @Inject(EXAM_NOW_PROVIDER) private readonly now: NowProvider,
+    private readonly audit: AuditService = new AuditService(prisma)
   ) {}
 
   async list(identity: RequestIdentity) {
@@ -189,6 +191,15 @@ export class ExamsService {
         where: { id },
         data: { status: "abandoned" }
       });
+      await this.audit.record(
+        {
+          actor: { ip: identity.ip, role: identity.role },
+          action: "exam_abandon",
+          target: id,
+          detail: { result: "success", reason: "explicit" }
+        },
+        tx
+      );
 
       return this.toExamResponse(updated as ExamAttemptRecord);
     });
@@ -205,6 +216,15 @@ export class ExamsService {
       }
       if (activeExam.status === "in_progress") {
         await tx.examAttempt.update({ where: { id: activeExam.id }, data: { status: "abandoned" } });
+        await this.audit.record(
+          {
+            actor: { ip: identity.ip, role: identity.role },
+            action: "exam_abandon",
+            target: activeExam.id,
+            detail: { result: "success", reason: "replaced_by_new_exam" }
+          },
+          tx
+        );
       }
     }
 
