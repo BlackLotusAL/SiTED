@@ -7,13 +7,18 @@
     "backend"
   ],
   "scripts": {
-    "dev": "concurrently -n backend,frontend -c blue,magenta \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "dev": "concurrently -n backend,frontend -c blue,magenta \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs watch --tsconfig backend/tsconfig.json backend/src/main.ts",
+    "dev:frontend": "vite --host 0.0.0.0 --config frontend/vite.config.ts",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
     "e2e": "npm run e2e --workspace frontend",
-    "db:migrate": "npm run db:migrate --workspace backend",
-    "db:seed": "npm run db:seed --workspace backend"
+    "db:migrate": "node --env-file=.env ./node_modules/prisma/build/index.js migrate dev --schema backend/prisma/schema.prisma",
+    "db:seed": "node --env-file=.env ./node_modules/prisma/build/index.js db seed --schema backend/prisma/schema.prisma"
+  },
+  "prisma": {
+    "seed": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs backend/prisma/seed.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

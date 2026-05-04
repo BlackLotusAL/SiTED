@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 const frontendDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(frontendDir, "..");
 const npmRun = process.platform === "win32" ? "npm.cmd run" : "npm run";
-const npmExec = process.platform === "win32" ? "npm.cmd exec" : "npm exec";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -18,7 +17,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `${npmRun} dev --workspace backend`,
+      command: `${npmRun} dev:backend`,
       cwd: repoRoot,
       env: {
         DATABASE_URL: "postgresql://sited:sited_dev_password@127.0.0.1:5432/sited?schema=public",
@@ -34,8 +33,8 @@ export default defineConfig({
       timeout: 120000
     },
     {
-      command: `${npmExec} vite -- --host 127.0.0.1 --port 5174`,
-      cwd: frontendDir,
+      command: `${npmRun} dev:frontend -- --host 127.0.0.1 --port 5174`,
+      cwd: repoRoot,
       url: "http://127.0.0.1:5174",
       reuseExistingServer: false,
       timeout: 120000

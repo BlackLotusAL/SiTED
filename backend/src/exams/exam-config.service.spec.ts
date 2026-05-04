@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BadRequestException, InternalServerErrorException } from "@nestjs/common";
@@ -6,6 +6,7 @@ import { ExamConfigService } from "./exam-config.service";
 
 describe("ExamConfigService", () => {
   const originalEnv = process.env.EXAM_CONFIG_PATH;
+  const originalCwd = process.cwd();
   let tempDir: string;
 
   beforeEach(() => {
@@ -18,6 +19,7 @@ describe("ExamConfigService", () => {
     } else {
       process.env.EXAM_CONFIG_PATH = originalEnv;
     }
+    process.chdir(originalCwd);
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -37,6 +39,23 @@ describe("ExamConfigService", () => {
       durationMinutes: 60,
       passScorePercent: 65,
       questionCounts: { judgment: 7, single: 25, multiple: 18 }
+    });
+  });
+
+  it("resolves root-relative config paths when running from the backend workspace", () => {
+    const backendDir = join(tempDir, "backend");
+    const configDir = join(backendDir, "config");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "exam-paper-config.yaml"), validYaml(), "utf8");
+    process.env.EXAM_CONFIG_PATH = "backend/config/exam-paper-config.yaml";
+    process.chdir(backendDir);
+
+    const service = new ExamConfigService();
+
+    expect(service.getSubjectConfig("programming")).toEqual({
+      durationMinutes: 45,
+      passScorePercent: 60,
+      questionCounts: { judgment: 8, single: 22, multiple: 10 }
     });
   });
 

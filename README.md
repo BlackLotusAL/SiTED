@@ -150,18 +150,10 @@
 npm install
 
 cp .env.example .env
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
 
 docker compose up -d db
 npm run db:migrate
 npm run db:seed
-
-export DATABASE_URL="postgresql://sited:sited_dev_password@127.0.0.1:5432/sited?schema=public"
-export ALLOWED_CIDR="10.0.0.0/8,127.0.0.1/32"
-export TRUSTED_PROXY_CIDRS="127.0.0.1/32"
-export SYSTEM_ADMIN_IPS="127.0.0.1,10.42.18.36"
-export UPLOAD_ROOT="backend/uploads"
 npm run dev
 ```
 
@@ -173,18 +165,10 @@ PowerShell 如果提示无法加载 `npm.ps1`，请使用 `npm.cmd`。
 npm.cmd install
 
 Copy-Item .env.example .env -ErrorAction SilentlyContinue
-Copy-Item backend/.env.example backend/.env -ErrorAction SilentlyContinue
-Copy-Item frontend/.env.example frontend/.env -ErrorAction SilentlyContinue
 
 docker compose up -d db
 npm.cmd run db:migrate
 npm.cmd run db:seed
-
-$env:DATABASE_URL = "postgresql://sited:sited_dev_password@127.0.0.1:5432/sited?schema=public"
-$env:ALLOWED_CIDR = "10.0.0.0/8,127.0.0.1/32"
-$env:TRUSTED_PROXY_CIDRS = "127.0.0.1/32"
-$env:SYSTEM_ADMIN_IPS = "127.0.0.1,10.42.18.36"
-$env:UPLOAD_ROOT = "backend/uploads"
 npm.cmd run dev
 ```
 
@@ -194,35 +178,33 @@ npm.cmd run dev
 - 后端服务：`http://127.0.0.1:3000`
 - 接口前缀：`http://127.0.0.1:3000/api/*`
 
-后端开发进程不会自动加载 `.env` 文件，因此环境变量需要在执行 `npm run dev` 或 `npm.cmd run dev` 的同一个终端会话中设置。不要在这里设置相对路径形式的 `EXAM_CONFIG_PATH`，本地开发默认会自动解析 `backend/config/exam-paper-config.yaml`。
+根目录脚本会从仓库根目录的 `.env` 加载后端和前端本地配置。请从仓库根目录执行 `npm run dev` 或 `npm.cmd run dev`，不要在 `backend` 或 `frontend` 子目录中维护额外的 `.env` 文件。
 
-如果需要分别启动前后端，请在两个终端中分别执行；后端终端需要先设置上面的环境变量，前端终端不需要额外环境变量。
+如果需要分别启动前后端，请在两个终端中分别执行根目录脚本。
 
 Linux / macOS：
 
 ```bash
-npm run dev --workspace backend
-npm run dev --workspace frontend
+npm run dev:backend
+npm run dev:frontend
 ```
 
 Windows PowerShell：
 
 ```powershell
-npm.cmd run dev --workspace backend
-npm.cmd run dev --workspace frontend
+npm.cmd run dev:backend
+npm.cmd run dev:frontend
 ```
 
 在 Windows 上，请在 `DATABASE_URL` 中使用 `127.0.0.1`，避免 `localhost` 解析到 IPv6 `::1` 后被后端 IPv4 白名单拒绝。
 
 ## ⚙️ 配置说明
 
-需要自定义本地配置时，可以从这些示例文件复制：
+需要自定义本地配置时，从根目录示例文件复制一份 `.env`：
 
 - `.env.example`
-- `backend/.env.example`
-- `frontend/.env.example`
 
-关键后端配置：
+本地配置：
 
 ```env
 DATABASE_URL=postgresql://sited:sited_dev_password@127.0.0.1:5432/sited?schema=public
@@ -231,9 +213,10 @@ TRUSTED_PROXY_CIDRS=127.0.0.1/32
 SYSTEM_ADMIN_IPS=127.0.0.1,10.42.18.36
 UPLOAD_ROOT=backend/uploads
 EXAM_CONFIG_PATH=backend/config/exam-paper-config.yaml
+VITE_API_BASE_URL=/api
 ```
 
-`EXAM_CONFIG_PATH` 是可选项；从仓库根目录导出环境变量时可以使用 `backend/config/exam-paper-config.yaml`，从 `backend` 工作区启动时使用 `config/exam-paper-config.yaml`，不配置时后端会自动寻找默认配置文件。
+`UPLOAD_ROOT` 和 `EXAM_CONFIG_PATH` 使用仓库根目录相对路径。不配置 `EXAM_CONFIG_PATH` 时，后端会自动寻找默认配置文件。
 
 前端开发代理配置在 `frontend/vite.config.ts` 中，`/api` 应指向 `http://127.0.0.1:3000`。
 
@@ -250,6 +233,8 @@ EXAM_CONFIG_PATH=backend/config/exam-paper-config.yaml
 | 用途 | Linux / macOS | Windows PowerShell |
 | --- | --- | --- |
 | 同时启动后端和前端 | `npm run dev` | `npm.cmd run dev` |
+| 仅启动后端 | `npm run dev:backend` | `npm.cmd run dev:backend` |
+| 仅启动前端 | `npm run dev:frontend` | `npm.cmd run dev:frontend` |
 | 构建所有工作区 | `npm run build` | `npm.cmd run build` |
 | 执行 Prisma 数据库迁移 | `npm run db:migrate` | `npm.cmd run db:migrate` |
 | 写入确定性的本地开发数据 | `npm run db:seed` | `npm.cmd run db:seed` |

@@ -3,15 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "node --env-file=../.env ../node_modules/tsx/dist/cli.mjs watch --tsconfig tsconfig.json src/main.ts",
     "build": "tsc -p tsconfig.build.json",
     "test": "jest --passWithNoTests",
     "lint": "eslint .",
-    "db:migrate": "prisma migrate dev",
-    "db:seed": "prisma db seed"
+    "db:migrate": "node --env-file=../.env ../node_modules/prisma/build/index.js migrate dev --schema prisma/schema.prisma",
+    "db:seed": "node --env-file=../.env ../node_modules/prisma/build/index.js db seed --schema prisma/schema.prisma"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "node --env-file=../.env ../node_modules/tsx/dist/cli.mjs prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

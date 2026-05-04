@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { QUESTION_TYPES, SUBJECTS, type QuestionType, type Subject } from "../domain/constants";
 import { isValidSubject } from "../domain/validation";
@@ -37,7 +37,16 @@ export class ExamConfigService {
 
 function resolveConfigPath(): string {
   if (process.env.EXAM_CONFIG_PATH !== undefined && process.env.EXAM_CONFIG_PATH.trim().length > 0) {
-    return resolve(process.env.EXAM_CONFIG_PATH);
+    const configured = process.env.EXAM_CONFIG_PATH;
+    if (resolve(configured) === configured) {
+      return configured;
+    }
+
+    const cwd = process.cwd();
+    const base = basename(cwd).toLowerCase() === "backend" && configured.replaceAll("\\", "/").startsWith("backend/")
+      ? resolve(cwd, "..")
+      : cwd;
+    return resolve(base, configured);
   }
 
   const backendCwdPath = resolve(process.cwd(), "config", "exam-paper-config.yaml");
