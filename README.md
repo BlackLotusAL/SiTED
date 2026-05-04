@@ -142,14 +142,50 @@
 
 ### 本地启动
 
-在仓库根目录执行：
+以下命令默认在仓库根目录执行。
 
-```powershell
+#### Linux / macOS
+
+```bash
 npm install
+
+cp .env.example .env
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+
 docker compose up -d db
 npm run db:migrate
 npm run db:seed
+
+export DATABASE_URL="postgresql://sited:sited_dev_password@127.0.0.1:5432/sited?schema=public"
+export ALLOWED_CIDR="10.0.0.0/8,127.0.0.1/32"
+export TRUSTED_PROXY_CIDRS="127.0.0.1/32"
+export SYSTEM_ADMIN_IPS="127.0.0.1,10.42.18.36"
+export UPLOAD_ROOT="backend/uploads"
 npm run dev
+```
+
+#### Windows PowerShell
+
+PowerShell 如果提示无法加载 `npm.ps1`，请使用 `npm.cmd`。
+
+```powershell
+npm.cmd install
+
+Copy-Item .env.example .env -ErrorAction SilentlyContinue
+Copy-Item backend/.env.example backend/.env -ErrorAction SilentlyContinue
+Copy-Item frontend/.env.example frontend/.env -ErrorAction SilentlyContinue
+
+docker compose up -d db
+npm.cmd run db:migrate
+npm.cmd run db:seed
+
+$env:DATABASE_URL = "postgresql://sited:sited_dev_password@127.0.0.1:5432/sited?schema=public"
+$env:ALLOWED_CIDR = "10.0.0.0/8,127.0.0.1/32"
+$env:TRUSTED_PROXY_CIDRS = "127.0.0.1/32"
+$env:SYSTEM_ADMIN_IPS = "127.0.0.1,10.42.18.36"
+$env:UPLOAD_ROOT = "backend/uploads"
+npm.cmd run dev
 ```
 
 启动后访问：
@@ -158,7 +194,25 @@ npm run dev
 - 后端服务：`http://127.0.0.1:3000`
 - 接口前缀：`http://127.0.0.1:3000/api/*`
 
-在 Windows 上，如果 Prisma 无法通过 `localhost` 连接数据库，请在 `DATABASE_URL` 中使用 `127.0.0.1`。
+后端开发进程不会自动加载 `.env` 文件，因此环境变量需要在执行 `npm run dev` 或 `npm.cmd run dev` 的同一个终端会话中设置。不要在这里设置相对路径形式的 `EXAM_CONFIG_PATH`，本地开发默认会自动解析 `backend/config/exam-paper-config.yaml`。
+
+如果需要分别启动前后端，请在两个终端中分别执行；后端终端需要先设置上面的环境变量，前端终端不需要额外环境变量。
+
+Linux / macOS：
+
+```bash
+npm run dev --workspace backend
+npm run dev --workspace frontend
+```
+
+Windows PowerShell：
+
+```powershell
+npm.cmd run dev --workspace backend
+npm.cmd run dev --workspace frontend
+```
+
+在 Windows 上，请在 `DATABASE_URL` 中使用 `127.0.0.1`，避免 `localhost` 解析到 IPv6 `::1` 后被后端 IPv4 白名单拒绝。
 
 ## ⚙️ 配置说明
 
@@ -179,6 +233,10 @@ UPLOAD_ROOT=backend/uploads
 EXAM_CONFIG_PATH=backend/config/exam-paper-config.yaml
 ```
 
+`EXAM_CONFIG_PATH` 是可选项；从仓库根目录导出环境变量时可以使用 `backend/config/exam-paper-config.yaml`，从 `backend` 工作区启动时使用 `config/exam-paper-config.yaml`，不配置时后端会自动寻找默认配置文件。
+
+前端开发代理配置在 `frontend/vite.config.ts` 中，`/api` 应指向 `http://127.0.0.1:3000`。
+
 角色解析规则：
 
 - `SYSTEM_ADMIN_IPS` 中的 IP 始终解析为系统管理员。
@@ -189,12 +247,12 @@ EXAM_CONFIG_PATH=backend/config/exam-paper-config.yaml
 
 ## 🧰 常用命令
 
-| 命令 | 说明 |
-| --- | --- |
-| `npm run dev` | 同时启动后端和前端 |
-| `npm run build` | 构建所有工作区 |
-| `npm run db:migrate` | 执行 Prisma 数据库迁移 |
-| `npm run db:seed` | 写入确定性的本地开发数据 |
+| 用途 | Linux / macOS | Windows PowerShell |
+| --- | --- | --- |
+| 同时启动后端和前端 | `npm run dev` | `npm.cmd run dev` |
+| 构建所有工作区 | `npm run build` | `npm.cmd run build` |
+| 执行 Prisma 数据库迁移 | `npm run db:migrate` | `npm.cmd run db:migrate` |
+| 写入确定性的本地开发数据 | `npm run db:seed` | `npm.cmd run db:seed` |
 
 种子数据会创建确定性的 `SITED-SEED*` 题目、访问者、角色绑定、训练记录、考试记录和审计日志。重复执行种子脚本会更新种子脚本拥有的数据，不会清空无关的本地数据。
 
