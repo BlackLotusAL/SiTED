@@ -49,3 +49,4 @@ next-env.d.ts
 
 # generated
 /backend/uploads
+/output/**/edge-cdp-profile/
