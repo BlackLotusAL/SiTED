@@ -4,19 +4,19 @@ subjects:
     passScorePercent: 60
     questionCounts:
       judgment: 8
-      single: 22
-      multiple: 10
+      single: 7
+      multiple: 5
   security_privacy:
     durationMinutes: 45
     passScorePercent: 60
     questionCounts:
       judgment: 8
-      single: 22
-      multiple: 10
+      single: 7
+      multiple: 5
   refactoring:
     durationMinutes: 60
     passScorePercent: 65
     questionCounts:
       judgment: 7
-      single: 25
-      multiple: 18
+      single: 7
+      multiple: 5
