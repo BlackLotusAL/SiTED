@@ -270,7 +270,7 @@ export function PracticePage() {
           <span>{sourceText}</span>
           <strong>{progressLabel}</strong>
         </div>
-        <div className="markdown-preview-body" dangerouslySetInnerHTML={{ __html: detail.stemHtml }} />
+        <div className="markdown-preview-body practice-stem" dangerouslySetInnerHTML={{ __html: detail.stemHtml }} />
         <div className={detail.source.type === "multiple" ? "options multi" : "options"} role="group" aria-label="答案选项">
           {detail.options.map((option) => {
             const selected = selectedKeys.includes(option.key);

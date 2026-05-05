@@ -13,6 +13,7 @@ vi.mock("../api/client", () => ({
 
 describe("QuestionsPage", () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
       if (path === "/questions/q-1") {
         return detail("q-1", "Real detail one", "First option");
@@ -43,6 +44,7 @@ describe("QuestionsPage", () => {
 
   afterEach(() => {
     cleanup();
+    localStorage.clear();
     vi.clearAllMocks();
   });
 
@@ -62,8 +64,47 @@ describe("QuestionsPage", () => {
 
     const preview = await screen.findByLabelText("题目预览");
     await waitFor(() => expect(within(preview).getByText("Real detail two")).toBeInTheDocument());
+    expect(within(preview).getByText("Real detail two").closest(".question-stem-preview")).not.toBeNull();
     expect(within(preview).getByText("A. Second option")).toBeInTheDocument();
     expect(within(preview).queryByText("正确答案")).not.toBeInTheDocument();
+  });
+
+  it("persists filters locally and restores them after navigating away and back", async () => {
+    const { unmount } = render(
+      <MemoryRouter>
+        <QuestionsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Real question one")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("题型"), { target: { value: "multiple" } });
+    fireEvent.change(screen.getByLabelText("关键词"), { target: { value: "security" } });
+
+    await waitFor(() =>
+      expect(localStorage.getItem("sited.questions.filters.v1")).toBe(
+        JSON.stringify({
+          subject: "programming",
+          language: "java",
+          level: "working",
+          type: "multiple",
+          keyword: "security"
+        })
+      )
+    );
+
+    unmount();
+    vi.mocked(apiClient.get).mockClear();
+
+    render(
+      <MemoryRouter>
+        <QuestionsPage />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByLabelText("题型")).toHaveValue("multiple");
+    expect(screen.getByLabelText("关键词")).toHaveValue("security");
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining("type=multiple")));
+    expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining("keyword=security"));
   });
 });
 
