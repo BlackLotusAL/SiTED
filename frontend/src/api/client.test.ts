@@ -72,6 +72,22 @@ describe("api client", () => {
     expect((requestInit.headers as Headers).get("content-type")).toBeNull();
   });
 
+  it("sends object bodies as JSON with content-type injection", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200
+      })
+    );
+    const api = createApiClient({ fetcher: fetchMock });
+
+    await api.post("/practice/submit", { questionId: "q1", submittedAnswers: ["A"] });
+
+    const [, requestInit] = fetchMock.mock.calls[0]!;
+    expect(requestInit.body).toBe(JSON.stringify({ questionId: "q1", submittedAnswers: ["A"] }));
+    expect((requestInit.headers as Headers).get("content-type")).toBe("application/json");
+  });
+
   it("sends raw string bodies without JSON stringifying or content-type injection", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
@@ -86,5 +102,22 @@ describe("api client", () => {
     const [, requestInit] = fetchMock.mock.calls[0]!;
     expect(requestInit.body).toBe("abc");
     expect((requestInit.headers as Headers).get("content-type")).toBeNull();
+  });
+
+  it("supports DELETE requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ deleted: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200
+      })
+    );
+    const api = createApiClient({ fetcher: fetchMock });
+
+    await expect(api.delete("/admin/settings/ip-role-bindings/10.0.0.9")).resolves.toEqual({ deleted: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/settings/ip-role-bindings/10.0.0.9",
+      expect.objectContaining({ method: "DELETE", headers: expect.any(Headers) })
+    );
   });
 });

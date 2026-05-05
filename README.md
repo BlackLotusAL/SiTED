@@ -123,11 +123,22 @@
 
 | 角色 | 获得方式 | 能力 |
 | --- | --- | --- |
-| 学习者 | 命中允许访问网段后的默认角色 | 浏览题库、练习、背诵、复习、收藏、模拟考 |
-| 题库管理员 | 系统管理员按 IP 绑定 | 学习者能力，加上题目维护、导入导出和运营统计 |
-| 系统管理员 | 通过 `SYSTEM_ADMIN_IPS` 环境变量指定 | 题库管理员能力，加上 IP 角色绑定、数据清理和审计查看 |
+| 学习者 | 命中允许访问网段后的默认角色 | 题库浏览、题库练习、模拟考试 |
+| 题库管理员 | 系统管理员按 IP 绑定 | 学习者能力，加上题库维护、导入导出、运营看板 |
+| 系统管理员 | 通过 `SYSTEM_ADMIN_IPS` 环境变量指定 | 题库管理员和学习者能力，加上系统配置、数据清空 |
 
-系统只提供固定角色，不提供复杂组织架构、积分排名、徽章证书或自定义权限组合。
+系统只提供固定角色，不提供复杂组织架构、积分排名、徽章证书或自定义权限组合。系统设置页的“权限范围”基于后端返回的 `permissionKeys` 聚合为能力分组展示，不展示不可单独配置的细粒度权限项。
+
+| 能力分组 | 覆盖的 `permissionKeys` |
+| --- | --- |
+| 题库浏览 | `question:browse` |
+| 题库练习 | `practice:use`、`recite:use`、`mistake:review`、`bookmark:use` |
+| 模拟考试 | `exam:use` |
+| 题库维护 | `question:create`、`question:edit`、`question:archive` |
+| 导入导出 | `question:import`、`question:export` |
+| 运营看板 | `stats:view_basic` |
+| 系统配置 | `ip_role:write`、`audit:view`、`config:reload` |
+| 数据清空 | `data:clear` |
 
 ## 🚀 快速开始
 

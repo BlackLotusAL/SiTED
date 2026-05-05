@@ -1697,6 +1697,39 @@ textarea:focus {
   color: var(--danger);
 }
 
+.toast-region {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  z-index: 1000;
+  display: flex;
+  width: min(560px, calc(100vw - 32px));
+  justify-content: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.status-toast {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border: 1px solid #f0b7b7;
+  border-radius: 8px;
+  background: #fffafa;
+  box-shadow: 0 16px 34px rgba(132, 31, 31, 0.16);
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.35;
+  pointer-events: auto;
+}
+
+.status-toast svg {
+  flex: 0 0 auto;
+}
+
 .status-message,
 .loading-note {
   margin: 0 0 14px;

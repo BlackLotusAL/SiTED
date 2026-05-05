@@ -9,35 +9,38 @@ import { resolveUploadRoot } from "../uploads/uploads.service";
 import { AuditService, type AuditActor } from "../audit/audit.service";
 
 export const DATA_CLEAR_CONFIRMATION_PHRASE = "CONFIRM_CLEAR_SITED_DATA";
+export const UI_DATA_CLEAR_CONFIRMATION_PHRASE = "确认清空";
 
 type BindingRole = Extract<Role, "learner" | "content_admin">;
 type ClearScope = "activity" | "questions" | "all";
+type RoleBindingSource = "system" | "binding";
 export type QuestionUploadRemover = () => Promise<void>;
 export const QUESTION_UPLOAD_REMOVER = Symbol("QUESTION_UPLOAD_REMOVER");
+const DATA_CLEAR_CONFIRMATION_PHRASES = new Set([DATA_CLEAR_CONFIRMATION_PHRASE, UI_DATA_CLEAR_CONFIRMATION_PHRASE]);
 
 const TABLE_HEADERS = ["IP", "fixed role", "permission scope", "description", "updated time"] as const;
 const ROLE_LABELS: Record<Role, string> = {
-  learner: "Learner",
-  content_admin: "Content admin",
-  system_admin: "System admin"
+  learner: "学习者",
+  content_admin: "题库管理员",
+  system_admin: "系统管理员"
 };
 const PERMISSION_LABELS: Record<Permission, string> = {
-  "question:browse": "Browse questions",
-  "practice:use": "Use practice",
-  "recite:use": "Use recite mode",
-  "mistake:review": "Review mistakes",
-  "bookmark:use": "Use bookmarks",
-  "exam:use": "Use exams",
-  "question:create": "Create questions",
-  "question:edit": "Edit questions",
-  "question:archive": "Archive questions",
-  "question:import": "Import questions",
-  "question:export": "Export questions",
-  "stats:view_basic": "View basic stats",
-  "ip_role:write": "Manage IP role bindings",
-  "data:clear": "Clear data",
-  "audit:view": "View audit logs",
-  "config:reload": "Reload config"
+  "question:browse": "浏览题库",
+  "practice:use": "练习",
+  "recite:use": "背诵",
+  "mistake:review": "错题复习",
+  "bookmark:use": "收藏",
+  "exam:use": "模拟考",
+  "question:create": "题目新增",
+  "question:edit": "题目编辑",
+  "question:archive": "题目归档",
+  "question:import": "题目导入",
+  "question:export": "题目导出",
+  "stats:view_basic": "运营看板只读",
+  "ip_role:write": "IP 角色绑定",
+  "data:clear": "数据清空",
+  "audit:view": "审计日志查看",
+  "config:reload": "配置重载"
 };
 
 @Injectable()
@@ -65,6 +68,7 @@ export class AdminSettingsService {
         ip,
         role: "system_admin",
         description: "From SYSTEM_ADMIN_IPS",
+        source: "system",
         updatedAt: null
       })
     );
@@ -75,6 +79,7 @@ export class AdminSettingsService {
           ip: binding.ip,
           role: binding.role,
           description: binding.note ?? "",
+          source: "binding",
           updatedAt: binding.updatedAt
         })
       );
@@ -118,6 +123,7 @@ export class AdminSettingsService {
       ip: binding.ip,
       role: binding.role,
       description: binding.note ?? "",
+      source: "binding",
       updatedAt: binding.updatedAt
     });
   }
@@ -157,7 +163,7 @@ export class AdminSettingsService {
 
   async clearData(input: unknown, actor: AuditActor) {
     const normalized = normalizeClearInput(input);
-    if (normalized.confirmationPhrase !== DATA_CLEAR_CONFIRMATION_PHRASE) {
+    if (!DATA_CLEAR_CONFIRMATION_PHRASES.has(normalized.confirmationPhrase)) {
       await this.audit.record({
         actor,
         action: "data_clear",
@@ -166,7 +172,7 @@ export class AdminSettingsService {
       });
       throw new BadRequestException({
         code: "DATA_CLEAR_CONFIRMATION_MISMATCH",
-        message: `confirmationPhrase must equal ${DATA_CLEAR_CONFIRMATION_PHRASE}`
+        message: `confirmationPhrase must equal ${UI_DATA_CLEAR_CONFIRMATION_PHRASE}`
       });
     }
 
@@ -227,13 +233,26 @@ export class AdminSettingsService {
   }
 }
 
-function roleBindingItem(input: { ip: string; role: Role; description: string; updatedAt: Date | null }) {
+function roleBindingItem(input: {
+  ip: string;
+  role: Role;
+  description: string;
+  source: RoleBindingSource;
+  updatedAt: Date | null;
+}) {
+  const permissionKeys = permissionsForRole(input.role);
+  const permissions = permissionKeys.map((permission) => PERMISSION_LABELS[permission]);
+
   return {
     ip: input.ip,
+    role: input.role,
     fixedRole: ROLE_LABELS[input.role],
-    permissionScope: permissionsForRole(input.role).map((permission) => PERMISSION_LABELS[permission]),
-    permissions: permissionsForRole(input.role).map((permission) => PERMISSION_LABELS[permission]),
+    permissionKeys,
+    permissionScope: permissions,
+    permissions,
     description: input.description,
+    source: input.source,
+    canDelete: input.source === "binding",
     updatedAt: input.updatedAt
   };
 }
