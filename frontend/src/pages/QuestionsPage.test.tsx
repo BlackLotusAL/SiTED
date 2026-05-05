@@ -148,20 +148,32 @@ describe("QuestionsPage", () => {
 
     const bookmarkedListButton = await screen.findByRole("button", { name: "取消收藏：Real question one" });
     expect(bookmarkedListButton).toHaveAttribute("aria-pressed", "true");
-    expect(await screen.findByRole("button", { name: "取消收藏题目" })).toHaveAttribute("aria-pressed", "true");
+    expectBookmarkIcon(bookmarkedListButton, "filled");
+    const bookmarkedPreviewButton = await screen.findByRole("button", { name: "取消收藏题目" });
+    expect(bookmarkedPreviewButton).toHaveAttribute("aria-pressed", "true");
+    expectBookmarkIcon(bookmarkedPreviewButton, "filled");
 
     fireEvent.click(screen.getByText("Real question two"));
-    expect(await screen.findByRole("button", { name: "收藏：Real question two" })).toHaveAttribute("aria-pressed", "false");
+    const unbookmarkedListButton = await screen.findByRole("button", { name: "收藏：Real question two" });
+    expect(unbookmarkedListButton).toHaveAttribute("aria-pressed", "false");
+    expectBookmarkIcon(unbookmarkedListButton, "outline");
     const previewBookmarkButton = await screen.findByRole("button", { name: "收藏题目" });
+    expectBookmarkIcon(previewBookmarkButton, "outline");
     fireEvent.click(previewBookmarkButton);
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith("/bookmarks/q-2", {}));
-    expect(await screen.findByRole("button", { name: "取消收藏：Real question two" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "取消收藏题目" })).toHaveAttribute("aria-pressed", "true");
+    const newlyBookmarkedListButton = await screen.findByRole("button", { name: "取消收藏：Real question two" });
+    expect(newlyBookmarkedListButton).toHaveAttribute("aria-pressed", "true");
+    expectBookmarkIcon(newlyBookmarkedListButton, "filled");
+    const newlyBookmarkedPreviewButton = screen.getByRole("button", { name: "取消收藏题目" });
+    expect(newlyBookmarkedPreviewButton).toHaveAttribute("aria-pressed", "true");
+    expectBookmarkIcon(newlyBookmarkedPreviewButton, "filled");
 
     fireEvent.click(screen.getByRole("button", { name: "取消收藏：Real question two" }));
     await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith("/bookmarks/q-2"));
-    expect(await screen.findByRole("button", { name: "收藏：Real question two" })).toHaveAttribute("aria-pressed", "false");
+    const restoredListButton = await screen.findByRole("button", { name: "收藏：Real question two" });
+    expect(restoredListButton).toHaveAttribute("aria-pressed", "false");
+    expectBookmarkIcon(restoredListButton, "outline");
   });
 
   it("shows an inline alert when a bookmark API call fails", async () => {
@@ -185,6 +197,15 @@ function renderQuestionsPage() {
       <QuestionsPage />
     </MemoryRouter>
   );
+}
+
+function expectBookmarkIcon(button: HTMLElement, state: "filled" | "outline") {
+  const icon = button.querySelector(".lucide-bookmark");
+  expect(icon).not.toBeNull();
+  if (icon === null) {
+    return;
+  }
+  expect(icon).toHaveAttribute("fill", state === "filled" ? "currentColor" : "none");
 }
 
 function listItem(id: string, stemMd: string) {

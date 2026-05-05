@@ -1,8 +1,8 @@
-import { Bookmark } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../api/client";
 import type { QuestionDetail, QuestionListItem, QuestionListResponse, ReviewBookmarksResponse } from "../api/types";
+import { BookmarkStateIcon } from "../components/BookmarkStateIcon";
 import { QuestionPreview } from "../components/QuestionPreview";
 import {
   getLanguageLabel,
@@ -238,7 +238,7 @@ export function QuestionsPage() {
                       void toggleBookmark(question.id);
                     }}
                   >
-                    <Bookmark aria-hidden="true" size={16} />
+                    <BookmarkStateIcon isBookmarked={isBookmarked} size={16} />
                   </button>
                 </div>
               </article>
