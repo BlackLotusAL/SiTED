@@ -34,12 +34,13 @@ describe("AppShell", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders learner shell with route title, top actions, and no admin nav", async () => {
+  it("renders learner shell with route title, workbench action, and no inactive utility controls", async () => {
     renderShell("/questions", learnerIdentity);
 
     expect(await screen.findByRole("heading", { name: "题库" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "查看通知" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "切换主题" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看通知" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "切换主题" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Light/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "开始练习" })).toHaveAttribute("href", "/practice");
     const identityCard = screen.getByLabelText("当前身份信息");
     expect(within(identityCard).getByText("学习者")).toBeInTheDocument();

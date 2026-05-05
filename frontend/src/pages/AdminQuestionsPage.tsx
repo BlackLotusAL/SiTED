@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, Plus, Save, Trash2, Upload } from "lucide-re
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../api/client";
 import { MarkdownEditor, MarkdownPreview } from "../components/MarkdownEditor";
-import type { Language, Level, QuestionType, Subject } from "../domain/labels";
+import { getLanguageLabel, LANGUAGES, type Language, type Level, type QuestionType, type Subject } from "../domain/labels";
 
 const DRAFT_STORAGE_KEY = "sited.admin.questionDraft.v1";
 const TOAST_AUTO_DISMISS_MS = 4000;
@@ -201,12 +201,11 @@ export function AdminQuestionsPage() {
           <label>
             语言
             <select value={draft.language} onChange={(event) => setDraft((current) => ({ ...current, language: event.target.value as Language }))}>
-              <option value="c">C</option>
-              <option value="cpp">C++</option>
-              <option value="python">Python</option>
-              <option value="java">Java</option>
-              <option value="javascript">JavaScript</option>
-              <option value="go">Go</option>
+              {LANGUAGES.map((language) => (
+                <option value={language} key={language}>
+                  {getLanguageLabel(language)}
+                </option>
+              ))}
             </select>
           </label>
           <label>

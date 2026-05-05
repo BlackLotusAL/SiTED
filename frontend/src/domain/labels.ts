@@ -1,7 +1,7 @@
 export const SUBJECTS = ["programming", "security_privacy", "refactoring"] as const;
 export type Subject = (typeof SUBJECTS)[number];
 
-export const LANGUAGES = ["c", "cpp", "python", "java", "javascript", "go"] as const;
+export const LANGUAGES = ["c", "cpp", "python", "java"] as const;
 export type Language = (typeof LANGUAGES)[number];
 
 export const LEVELS = ["entry", "working", "professional"] as const;
@@ -38,9 +38,7 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   c: "C",
   cpp: "C++",
   python: "Python",
-  java: "Java",
-  javascript: "JavaScript",
-  go: "Go"
+  java: "Java"
 };
 
 export const LEVEL_LABELS: Record<Level, string> = {

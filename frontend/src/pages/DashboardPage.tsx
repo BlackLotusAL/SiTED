@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { DashboardSummary } from "../api/types";
@@ -64,6 +64,20 @@ export function DashboardPage() {
             今天已完成 {data.today.answered} 道题，正确率 {data.today.correctRate}%。
             {data.mistakes.unmastered > 0 ? `未掌握错题还剩 ${data.mistakes.unmastered} 道。` : "暂无待复习错题。"}
           </p>
+          <div className="overview-facts" aria-label="今日训练摘要">
+            <span>
+              <small>作答</small>
+              <strong>{data.today.answered}</strong>
+            </span>
+            <span>
+              <small>正确率</small>
+              <strong>{data.today.correctRate}%</strong>
+            </span>
+            <span>
+              <small>未掌握</small>
+              <strong>{data.mistakes.unmastered}</strong>
+            </span>
+          </div>
           <div className="button-row">
             <Link className="primary-button" to="/practice">
               开始练习

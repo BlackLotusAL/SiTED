@@ -5,7 +5,8 @@ import {
   getQuestionStatusLabel,
   getQuestionTypeLabel,
   getRoleLabel,
-  getSubjectLabel
+  getSubjectLabel,
+  LANGUAGES
 } from "./labels";
 
 describe("domain labels", () => {
@@ -23,5 +24,9 @@ describe("domain labels", () => {
     expect(getRoleLabel("learner")).toBe("学习者");
     expect(getRoleLabel("content_admin")).toBe("题库管理员");
     expect(getRoleLabel("system_admin")).toBe("系统管理员");
+  });
+
+  it("keeps P0 language options aligned to the PRD", () => {
+    expect(LANGUAGES).toEqual(["c", "cpp", "python", "java"]);
   });
 });

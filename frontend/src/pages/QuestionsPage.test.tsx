@@ -127,6 +127,22 @@ describe("QuestionsPage", () => {
     expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining("keyword=security"));
   });
 
+  it("offers only the four P0 training languages", async () => {
+    renderQuestionsPage();
+
+    await screen.findByText("Real question one");
+
+    const languageSelect = screen.getByLabelText("语言");
+    expect(within(languageSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "C",
+      "C++",
+      "Python",
+      "Java"
+    ]);
+    expect(within(languageSelect).queryByRole("option", { name: "JavaScript" })).not.toBeInTheDocument();
+    expect(within(languageSelect).queryByRole("option", { name: "Go" })).not.toBeInTheDocument();
+  });
+
   it("initializes bookmark state and keeps list and preview bookmark buttons in sync", async () => {
     renderQuestionsPage();
 

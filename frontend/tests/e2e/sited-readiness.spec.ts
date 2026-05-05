@@ -118,8 +118,8 @@ test.describe("SiTED local readiness", () => {
     await expect(page.locator(".answer-panel[role='status']")).toBeVisible();
     await expect(page.locator(".option.is-wrong")).toContainText("ArrayList");
     await expect(page.locator(".option.is-correct")).toContainText("ConcurrentHashMap");
-    await expect(page.locator(".option.is-correct")).toHaveCSS("background-color", "rgb(236, 253, 243)");
-    await expect(page.locator(".answer-panel[role='status'] strong")).toHaveCSS("color", "rgb(189, 63, 59)");
+    await expect(page.locator(".option.is-correct")).toHaveCSS("background-color", "rgb(234, 248, 240)");
+    await expect(page.locator(".answer-panel[role='status'] strong")).toHaveCSS("color", "rgb(182, 64, 58)");
 
     await page.locator(".options .option").filter({ hasText: "ConcurrentHashMap" }).click();
     await expect(page.locator(".practice-resubmit-note")).toContainText("已修改答案，可重新提交");
@@ -200,7 +200,7 @@ test.describe("SiTED local readiness", () => {
     await page.locator(".answer-sheet > .danger-button").click();
     await expect(page.locator(".submit-confirmation[role='alert']")).toBeVisible();
     await expect(page.locator(".submit-confirmation[role='alert']")).toContainText(/还有 \d+ 道题未作答/);
-    await expect(page.locator(".submit-confirmation[role='alert'] strong")).toHaveCSS("color", "rgb(189, 63, 59)");
+    await expect(page.locator(".submit-confirmation[role='alert'] strong")).toHaveCSS("color", "rgb(182, 64, 58)");
     const continueBox = await requiredBox(page.getByRole("button", { name: "继续答题" }));
     const confirmBox = await requiredBox(page.getByRole("button", { name: "确认交卷" }));
     expect(Math.abs(continueBox.y - confirmBox.y)).toBeLessThanOrEqual(2);
@@ -212,9 +212,9 @@ test.describe("SiTED local readiness", () => {
     await expect(reviewTitle).not.toContainText("复盘结果");
     const reviewTitleText = await reviewTitle.textContent();
     if (reviewTitleText?.includes("错误")) {
-      await expect(reviewTitle).toHaveCSS("color", "rgb(189, 63, 59)");
+      await expect(reviewTitle).toHaveCSS("color", "rgb(182, 64, 58)");
     } else {
-      await expect(reviewTitle).toHaveCSS("color", "rgb(32, 136, 90)");
+      await expect(reviewTitle).toHaveCSS("color", "rgb(31, 125, 87)");
     }
     await expect(page.locator(".exam-result-summary")).toContainText("考试结果");
     await expect(page.locator(".exam-result-summary")).toContainText("正确率");

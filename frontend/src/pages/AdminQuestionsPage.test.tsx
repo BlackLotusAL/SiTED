@@ -32,6 +32,20 @@ describe("AdminQuestionsPage", () => {
     expect(within(preview).getByText("A. CopyOnWriteArrayList")).toBeInTheDocument();
   });
 
+  it("limits authoring language choices to P0 languages", () => {
+    render(<AdminQuestionsPage />);
+
+    const languageSelect = screen.getByLabelText("语言");
+    expect(within(languageSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "C",
+      "C++",
+      "Python",
+      "Java"
+    ]);
+    expect(within(languageSelect).queryByRole("option", { name: "JavaScript" })).not.toBeInTheDocument();
+    expect(within(languageSelect).queryByRole("option", { name: "Go" })).not.toBeInTheDocument();
+  });
+
   it("keeps single and multiple questions at empty A-D by default and supports adding through F and deleting down to three options", () => {
     render(<AdminQuestionsPage />);
 
