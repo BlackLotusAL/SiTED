@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, Flag, FlagOff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { ExamDetail, ExamListResponse, ExamQuestion } from "../api/types";
 import {
@@ -18,6 +19,8 @@ type ExamViewState = "loading" | "unstarted" | "answering" | "confirming" | "rev
 type ExamSource = { subject: Subject; language: Language | null; level: Level };
 
 export function ExamPage() {
+  const [searchParams] = useSearchParams();
+  const examId = searchParams.get("examId");
   const [viewState, setViewState] = useState<ExamViewState>("loading");
   const [exam, setExam] = useState<ExamDetail | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -34,9 +37,18 @@ export function ExamPage() {
     let isMounted = true;
     setViewState("loading");
 
-    apiClient
-      .get<ExamListResponse>("/exams")
-      .then(async (payload) => {
+    async function loadExam() {
+      try {
+        if (examId) {
+          const detail = await apiClient.get<ExamDetail>(`/exams/${examId}`);
+          if (!isMounted) {
+            return;
+          }
+          setExamState(detail ?? null);
+          return;
+        }
+
+        const payload = await apiClient.get<ExamListResponse>("/exams");
         if (!isMounted) {
           return;
         }
@@ -50,18 +62,20 @@ export function ExamPage() {
           return;
         }
         setExamState(detail ?? null);
-      })
-      .catch(() => {
+      } catch {
         if (!isMounted) {
           return;
         }
         setViewState("error");
-      });
+      }
+    }
+
+    void loadExam();
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [examId]);
 
   const currentQuestion = exam?.questions[currentIndex] ?? null;
   const currentAnswers = currentQuestion ? answers[currentQuestion.id] ?? [] : [];

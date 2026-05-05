@@ -2,7 +2,7 @@ import { Bookmark } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../api/client";
-import type { QuestionDetail, QuestionListItem, QuestionListResponse } from "../api/types";
+import type { QuestionDetail, QuestionListItem, QuestionListResponse, ReviewBookmarksResponse } from "../api/types";
 import { QuestionPreview } from "../components/QuestionPreview";
 import {
   getLanguageLabel,
@@ -45,11 +45,35 @@ export function QuestionsPage() {
   const [detail, setDetail] = useState<QuestionDetail | null>(null);
   const [listStatus, setListStatus] = useState<"loading" | "ready" | "error">("loading");
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [bookmarkedQuestionIds, setBookmarkedQuestionIds] = useState<Set<string>>(() => new Set());
+  const [bookmarkingQuestionIds, setBookmarkingQuestionIds] = useState<Set<string>>(() => new Set());
+  const [bookmarkError, setBookmarkError] = useState<string | null>(null);
   const practiceHref = useMemo(() => `/practice?${filtersToSearchParams(filters).toString()}`, [filters]);
 
   useEffect(() => {
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
   }, [filters]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    apiClient
+      .get<ReviewBookmarksResponse>("/review/bookmarks")
+      .then((payload) => {
+        if (isMounted) {
+          setBookmarkedQuestionIds(new Set((payload?.items ?? []).map((item) => item.questionId)));
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setBookmarkError("收藏状态加载失败，请稍后重试。");
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -112,6 +136,38 @@ export function QuestionsPage() {
     };
   }, [selectedId]);
 
+  async function toggleBookmark(questionId: string) {
+    if (bookmarkingQuestionIds.has(questionId)) {
+      return;
+    }
+
+    const isBookmarked = bookmarkedQuestionIds.has(questionId);
+    setBookmarkError(null);
+    setBookmarkingQuestionIds((current) => new Set(current).add(questionId));
+
+    try {
+      if (isBookmarked) {
+        await apiClient.delete<{ deleted: boolean }>(`/bookmarks/${questionId}`);
+        setBookmarkedQuestionIds((current) => {
+          const next = new Set(current);
+          next.delete(questionId);
+          return next;
+        });
+      } else {
+        await apiClient.post(`/bookmarks/${questionId}`, {});
+        setBookmarkedQuestionIds((current) => new Set(current).add(questionId));
+      }
+    } catch {
+      setBookmarkError("收藏操作失败，请稍后重试。");
+    } finally {
+      setBookmarkingQuestionIds((current) => {
+        const next = new Set(current);
+        next.delete(questionId);
+        return next;
+      });
+    }
+  }
+
   return (
     <>
       <section className="panel">
@@ -140,37 +196,65 @@ export function QuestionsPage() {
 
       <div className="question-layout">
         <section className="question-list" aria-label="题目列表">
+          {bookmarkError ? (
+            <div className="bookmark-error" role="alert">
+              {bookmarkError}
+            </div>
+          ) : null}
           {listStatus === "loading" ? <div className="panel">正在加载真实题目...</div> : null}
           {listStatus === "error" ? <div className="panel" role="alert">题目加载失败，请稍后重试。</div> : null}
           {listStatus === "ready" && questions.length === 0 ? <div className="panel">当前筛选条件下暂无已发布题目。</div> : null}
-          {questions.map((question) => (
-            <article
-              className={question.id === selectedId ? "question-card selected" : "question-card"}
-              onClick={() => setSelectedId(question.id)}
-              key={question.id}
-            >
-              <div className="question-meta">
-                <span>{getSubjectLabel(question.subject as Subject, "short")}</span>
-                {question.language ? <span>{getLanguageLabel(question.language as Language)}</span> : null}
-                <span>{getLevelLabel(question.level as Level)}</span>
-                <span>{getQuestionTypeLabel(question.type as QuestionType)}</span>
-                {question.tags.map((tag) => (
-                  <span key={tag}>{tag}</span>
-                ))}
-              </div>
-              <h3>{plainText(question.stemMd)}</h3>
-              {question.memo ? <p>{question.memo}</p> : null}
-              <div className="question-footer">
-                <span>正确率 {question.correctRate}%</span>
-                <button className="icon-button small" type="button" aria-label={`收藏：${plainText(question.stemMd)}`} onClick={(event) => event.stopPropagation()}>
-                  <Bookmark aria-hidden="true" size={16} />
-                </button>
-              </div>
-            </article>
-          ))}
+          {questions.map((question) => {
+            const summary = plainText(question.stemMd);
+            const isBookmarked = bookmarkedQuestionIds.has(question.id);
+            const isBookmarking = bookmarkingQuestionIds.has(question.id);
+            return (
+              <article
+                className={question.id === selectedId ? "question-card selected" : "question-card"}
+                onClick={() => setSelectedId(question.id)}
+                key={question.id}
+              >
+                <div className="question-meta">
+                  <span>{getSubjectLabel(question.subject as Subject, "short")}</span>
+                  {question.language ? <span>{getLanguageLabel(question.language as Language)}</span> : null}
+                  <span>{getLevelLabel(question.level as Level)}</span>
+                  <span>{getQuestionTypeLabel(question.type as QuestionType)}</span>
+                  {question.tags.map((tag) => (
+                    <span key={tag}>{tag}</span>
+                  ))}
+                </div>
+                <h3>{summary}</h3>
+                {question.memo ? <p>{question.memo}</p> : null}
+                <div className="question-footer">
+                  <span>正确率 {question.correctRate}%</span>
+                  <button
+                    className={isBookmarked ? "icon-button small active" : "icon-button small"}
+                    type="button"
+                    aria-label={`${isBookmarked ? "取消收藏" : "收藏"}：${summary}`}
+                    aria-pressed={isBookmarked}
+                    disabled={isBookmarking}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void toggleBookmark(question.id);
+                    }}
+                  >
+                    <Bookmark aria-hidden="true" size={16} />
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </section>
 
-        <QuestionPreview detail={detailStatus === "error" ? null : detail} loading={detailStatus === "loading"} />
+        <QuestionPreview
+          detail={detailStatus === "error" ? null : detail}
+          loading={detailStatus === "loading"}
+          isBookmarked={detail !== null && bookmarkedQuestionIds.has(detail.id)}
+          isBookmarking={detail !== null && bookmarkingQuestionIds.has(detail.id)}
+          onToggleBookmark={(questionId) => {
+            void toggleBookmark(questionId);
+          }}
+        />
       </div>
     </>
   );

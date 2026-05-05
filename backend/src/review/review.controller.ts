@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, InternalServerErrorException, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, InternalServerErrorException, Param, ParseUUIDPipe, Patch, Req } from "@nestjs/common";
 import type { IdentityRequest } from "../identity/identity.middleware";
 import type { RequestIdentity } from "../identity/identity.service";
 import { ReviewService } from "./review.service";
@@ -20,6 +20,20 @@ export class ReviewController {
   @Get("records")
   records(@Req() request: IdentityRequest) {
     return this.reviewService.listRecords(requireIdentity(request));
+  }
+
+  @Patch("mistakes/:id")
+  updateMistake(
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
+    @Body() body: unknown,
+    @Req() request: IdentityRequest
+  ) {
+    return this.reviewService.updateMistakeMastery(id, body, requireIdentity(request));
+  }
+
+  @Delete("mistakes/:id")
+  removeMistake(@Param("id", new ParseUUIDPipe({ version: "4" })) id: string, @Req() request: IdentityRequest) {
+    return this.reviewService.removeMistake(id, requireIdentity(request));
   }
 }
 

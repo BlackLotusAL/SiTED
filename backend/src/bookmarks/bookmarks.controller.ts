@@ -1,4 +1,4 @@
-import { Controller, Delete, Inject, InternalServerErrorException, Param, ParseUUIDPipe, Post, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Inject, InternalServerErrorException, Param, ParseUUIDPipe, Patch, Post, Req } from "@nestjs/common";
 import type { IdentityRequest } from "../identity/identity.middleware";
 import type { RequestIdentity } from "../identity/identity.service";
 import { BookmarksService } from "./bookmarks.service";
@@ -15,6 +15,15 @@ export class BookmarksController {
   @Delete(":questionId")
   remove(@Param("questionId", new ParseUUIDPipe({ version: "4" })) questionId: string, @Req() request: IdentityRequest) {
     return this.bookmarksService.remove(questionId, requireIdentity(request));
+  }
+
+  @Patch(":questionId")
+  update(
+    @Param("questionId", new ParseUUIDPipe({ version: "4" })) questionId: string,
+    @Body() body: unknown,
+    @Req() request: IdentityRequest
+  ) {
+    return this.bookmarksService.update(questionId, body, requireIdentity(request));
   }
 }
 
