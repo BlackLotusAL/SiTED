@@ -25,6 +25,7 @@ export function Sidebar({ identity, identityStatus }: SidebarProps) {
       </div>
 
       <nav className="nav-list">
+        <div className="nav-section">训练</div>
         {LEARNER_ITEMS.map((item) => (
           <SidebarLink item={item} key={item.path} />
         ))}

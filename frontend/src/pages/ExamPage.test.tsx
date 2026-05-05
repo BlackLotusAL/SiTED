@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { apiClient } from "../api/client";
@@ -33,6 +33,23 @@ describe("ExamPage", () => {
     expect(await screen.findByRole("heading", { name: "未启动模拟考" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始模拟考" })).toBeInTheDocument();
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it("offers only P0 languages before starting an exam", async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ items: [] });
+
+    renderExam();
+
+    expect(await screen.findByRole("heading", { name: "未启动模拟考" })).toBeInTheDocument();
+    const languageSelect = screen.getByLabelText("语言");
+    expect(within(languageSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "C",
+      "C++",
+      "Python",
+      "Java"
+    ]);
+    expect(within(languageSelect).queryByRole("option", { name: "JavaScript" })).not.toBeInTheDocument();
+    expect(within(languageSelect).queryByRole("option", { name: "Go" })).not.toBeInTheDocument();
   });
 
   it("creates an exam only after the user starts it", async () => {
