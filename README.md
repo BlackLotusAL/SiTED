@@ -8,8 +8,8 @@
 
 零摩擦接入 · IP 即身份 · 刷题复习闭环 · 题库管理
 
-[![Backend Tests](https://img.shields.io/badge/backend%20tests-131%20passing-success)](backend/src)
-[![Frontend Tests](https://img.shields.io/badge/frontend%20tests-61%20passing-success)](frontend/src)
+[![Backend Tests](https://img.shields.io/badge/backend%20tests-148%20passing-success)](backend/src)
+[![Frontend Tests](https://img.shields.io/badge/frontend%20tests-70%20passing-success)](frontend/src)
 [![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
@@ -53,9 +53,9 @@
 - 题库浏览：按科目、语言、级别、题型和关键词筛选，关键词可匹配标签，筛选条件会在本地保留。
 - 单题练习：提交答案后立即反馈；答错后可改选并再次提交。
 - 背诵模式：在练习页直接查看答案和解析，不写练习记录。
-- 错题复习：沉淀未掌握题目，辅助集中复习。
-- 收藏题目：保留重点题目，方便后续回看。
-- 模拟考试：选择题源后组卷，提供答题卡、提交答案、交卷确认、复盘结果和重新选择题源。
+- 错题复习：沉淀错题，支持重练、标记掌握、取消掌握和移除。
+- 收藏题目：题库列表和预览区可收藏重点题目，复习页支持练习、背诵、备注和标签维护。
+- 模拟考试：选择题源后组卷，提供答题卡、提交答案、交卷确认、复盘结果、模拟考记录和重新选择题源。
 
 </td>
 <td width="50%" valign="top">
@@ -116,7 +116,7 @@
 1. 用户打开内网站点，系统按 IP 自动识别身份。
 2. 用户按科目、语言、级别、题型和关键词筛选题目，关键词可匹配标签。
 3. 用户进入练习（含背诵模式）或模拟考试。
-4. 系统记录作答、错题、收藏和考试快照。
+4. 系统记录作答、错题、收藏和考试快照，并在复习页分页查看错题、收藏和模拟考记录。
 5. 管理员维护题库、查看统计、管理角色绑定和审计日志。
 
 ## 🪪 角色与权限
