@@ -40,20 +40,63 @@ describe("AdminSettingsService", () => {
     expect(result.items).toEqual([
       expect.objectContaining({
         ip: "10.0.0.1",
-        fixedRole: "System admin",
-        permissionScope: expect.arrayContaining(["Clear data", "View audit logs"]),
-        permissions: expect.arrayContaining(["Clear data", "View audit logs"]),
+        role: "system_admin",
+        fixedRole: "系统管理员",
+        source: "system",
+        canDelete: false,
+        permissionKeys: expect.arrayContaining(["data:clear", "audit:view"]),
+        permissionScope: expect.arrayContaining(["数据清空", "审计日志查看"]),
+        permissions: expect.arrayContaining(["数据清空", "审计日志查看"]),
         description: "From SYSTEM_ADMIN_IPS"
       }),
       expect.objectContaining({
         ip: "10.0.0.8",
-        fixedRole: "System admin",
-        permissionScope: expect.arrayContaining(["Clear data", "View audit logs"]),
+        role: "system_admin",
+        fixedRole: "系统管理员",
+        source: "system",
+        canDelete: false,
+        permissionKeys: expect.arrayContaining(["data:clear", "audit:view"]),
+        permissionScope: expect.arrayContaining(["数据清空", "审计日志查看"]),
         description: "From SYSTEM_ADMIN_IPS"
       })
     ]);
-    expect(JSON.stringify(result.items)).not.toContain("system_admin");
+    expect(result.items.map((item) => item.fixedRole)).toEqual(["系统管理员", "系统管理员"]);
     expect(prisma.ipRoleBinding.findMany).toHaveBeenCalledWith({ orderBy: [{ updatedAt: "desc" }, { ip: "asc" }] });
+  });
+
+  it("marks persisted role bindings as deletable and exposes machine-readable roles and permissions", async () => {
+    process.env.SYSTEM_ADMIN_IPS = "10.0.0.1";
+    const prisma = prismaMock();
+    prisma.ipRoleBinding.findMany.mockResolvedValue([
+      {
+        id: "binding1",
+        ip: "10.0.0.9",
+        role: "content_admin",
+        note: "Question maintainer",
+        updatedAt: new Date("2026-05-03T00:00:00.000Z")
+      }
+    ]);
+    const service = new AdminSettingsService(prisma as never);
+
+    const result = await service.listRoleBindings();
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        ip: "10.0.0.1",
+        role: "system_admin",
+        source: "system",
+        canDelete: false,
+        permissionKeys: expect.arrayContaining(["ip_role:write", "data:clear"])
+      }),
+      expect.objectContaining({
+        ip: "10.0.0.9",
+        role: "content_admin",
+        fixedRole: "题库管理员",
+        source: "binding",
+        canDelete: true,
+        permissionKeys: expect.arrayContaining(["question:create", "question:import", "question:export"])
+      })
+    ]);
   });
 
   it("rejects persisted system_admin role bindings and audits valid role binding changes", async () => {
@@ -69,7 +112,7 @@ describe("AdminSettingsService", () => {
       { ip: "10.0.0.1", role: "system_admin" }
     );
 
-    expect(result).toMatchObject({ ip: "10.0.0.9", fixedRole: "Content admin" });
+    expect(result).toMatchObject({ ip: "10.0.0.9", fixedRole: "题库管理员" });
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
     expect(prisma.ipRoleBinding.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -200,6 +243,26 @@ describe("AdminSettingsService", () => {
     expect(prisma.examAttempt.deleteMany).toHaveBeenCalled();
     expect(prisma.visitor.deleteMany).not.toHaveBeenCalled();
     expect(prisma.auditLog.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "data_clear",
+        target: "activity",
+        detail: expect.objectContaining({ scope: "activity", result: "success" })
+      })
+    });
+  });
+
+  it("accepts the Chinese UI confirmation phrase for data clear", async () => {
+    const prisma = prismaMock();
+    const service = new AdminSettingsService(prisma as never);
+
+    const result = await service.clearData(
+      { scope: "activity", confirmationPhrase: "确认清空" },
+      { ip: "10.0.0.1", role: "system_admin" }
+    );
+
+    expect(result).toEqual({ scope: "activity", result: "success", dbResult: "success" });
+    expect(prisma.examAttempt.deleteMany).toHaveBeenCalled();
     expect(prisma.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         action: "data_clear",
