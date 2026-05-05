@@ -1,31 +1,85 @@
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { apiClient } from "../api/client";
+import type { DashboardSummary } from "../api/types";
 import { TrainingCalendar } from "../components/TrainingCalendar";
-import { getSubjectLabel } from "../domain/labels";
+import { getLanguageLabel, getLevelLabel, getSubjectLabel, type Language, type Level, type Subject } from "../domain/labels";
 
 export function DashboardPage() {
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let isMounted = true;
+    setStatus("loading");
+
+    apiClient
+      .get<DashboardSummary>("/dashboard")
+      .then((payload) => {
+        if (!isMounted) {
+          return;
+        }
+        setSummary(payload ?? emptySummary());
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setStatus("error");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  if (status === "loading") {
+    return <section className="panel">正在加载训练数据...</section>;
+  }
+
+  if (status === "error") {
+    return (
+      <section className="panel" role="alert">
+        首页数据加载失败，请稍后重试。
+      </section>
+    );
+  }
+
+  const data = summary ?? emptySummary();
+  const latestExamLabel = data.latestExam
+    ? `${data.latestExam.scorePercent ?? 0}`
+    : "暂无记录";
+  const latestExamNote = data.latestExam
+    ? sourceLabel(data.latestExam.subject, data.latestExam.language, data.latestExam.level)
+    : "尚未启动模拟考";
+
   return (
     <div className="dashboard-grid">
       <section className="overview-panel">
         <div className="overview-copy">
           <p className="hero-label">今日训练</p>
-          <h2>继续完成科目二工作级练习</h2>
-          <p>今天已完成 28 道题，正确率稳定在 82%。错题复习还剩 7 道，建议先完成复习再进入模拟考。</p>
+          <h2>{data.today.answered > 0 ? "继续完成今日练习" : "先从题库筛选练习"}</h2>
+          <p>
+            今天已完成 {data.today.answered} 道题，正确率 {data.today.correctRate}%。
+            {data.mistakes.unmastered > 0 ? `未掌握错题还剩 ${data.mistakes.unmastered} 道。` : "暂无待复习错题。"}
+          </p>
           <div className="button-row">
             <Link className="primary-button" to="/practice">
-              继续练习
+              开始练习
             </Link>
-            <Link className="secondary-button" to="/review">
-              复习错题
+            <Link className="secondary-button" to="/questions">
+              题库筛选
             </Link>
           </div>
         </div>
-        <TrainingCalendar />
+        <TrainingCalendar months={[{ ...data.calendar, days: data.calendar.days }]} initialMonthIndex={0} />
       </section>
 
-      <MetricCard title="今日作答" value="28" note="比昨日多 9 题" />
-      <MetricCard className="accent-blue" title="正确率" value="82%" note="近 30 天 +6%" />
-      <MetricCard className="accent-amber" title="待复习错题" value="7" note="3 题已连续答对 2 次" />
-      <MetricCard className="accent-coral" title="最近模拟考" value="76" note="科目三 / Python" />
+      <MetricCard title="今日作答" value={`${data.today.answered}`} note={`答对 ${data.today.correct} / 答错 ${data.today.incorrect}`} />
+      <MetricCard className="accent-blue" title="正确率" value={`${data.today.correctRate}%`} note="基于今日真实练习记录" />
+      <MetricCard className="accent-amber" title="待复习错题" value={`${data.mistakes.unmastered}`} note="未掌握错题数" />
+      <MetricCard className="accent-coral" title="最近模拟考" value={latestExamLabel} note={latestExamNote} />
 
       <section className="panel dashboard-wide">
         <div className="panel-heading">
@@ -35,9 +89,15 @@ export function DashboardPage() {
           </Link>
         </div>
         <div className="coverage-list">
-          <CoverageRow className="violet" label={getSubjectLabel("programming")} note="C / C++ / Python / Java，12 个组合" value={78} />
-          <CoverageRow className="blue" label={getSubjectLabel("security_privacy")} note="工作级、专业级，8 个组合" value={64} />
-          <CoverageRow className="amber" label={getSubjectLabel("refactoring")} note="不区分语言，专业级" value={91} />
+          {data.coverage.map((item, index) => (
+            <CoverageRow
+              className={index === 0 ? "violet" : index === 1 ? "blue" : "amber"}
+              label={getSubjectLabel(item.subject as Subject)}
+              note={`${item.count} 题`}
+              value={coveragePercent(item.count, data.coverage)}
+              key={item.subject}
+            />
+          ))}
         </div>
       </section>
 
@@ -46,25 +106,25 @@ export function DashboardPage() {
           <h3>推荐工作流</h3>
         </div>
         <div className="task-stack">
-          <Link className="task-row" to="/review">
+          <Link className="task-row" to={data.mistakes.unmastered > 0 ? "/review" : "/questions"}>
             <span className="task-index">01</span>
             <div>
-              <strong>先复习未掌握错题</strong>
-              <small>7 道题，预计 6 分钟</small>
+              <strong>{data.mistakes.unmastered > 0 ? "先复习未掌握错题" : "先从题库筛选练习"}</strong>
+              <small>{data.mistakes.unmastered > 0 ? `${data.mistakes.unmastered} 道题` : "选择科目、语言、级别和题型"}</small>
             </div>
           </Link>
-          <Link className="task-row" to="/questions">
+          <Link className="task-row" to="/practice?mode=recite">
             <span className="task-index">02</span>
             <div>
-              <strong>补齐 Python 安全题源</strong>
-              <small>筛选工作级，多选题优先</small>
+              <strong>切换背诵模式</strong>
+              <small>直接查看答案和解析，不写入练习记录</small>
             </div>
           </Link>
           <Link className="task-row" to="/exam">
             <span className="task-index">03</span>
             <div>
-              <strong>进入 45 分钟模拟考</strong>
-              <small>交卷后自动生成复盘</small>
+              <strong>进入模拟考</strong>
+              <small>未启动时先选择考试范围</small>
             </div>
           </Link>
         </div>
@@ -94,4 +154,38 @@ function CoverageRow({ className, label, note, value }: { className: string; lab
       <meter min="0" max="100" value={value} aria-label={`${label}覆盖率`} />
     </div>
   );
+}
+
+function sourceLabel(subject: string, language: string | null, level: string): string {
+  return [getSubjectLabel(subject as Subject, "short"), language ? getLanguageLabel(language as Language) : null, getLevelLabel(level as Level)]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function coveragePercent(count: number, coverage: Array<{ count: number }>): number {
+  const max = Math.max(1, ...coverage.map((item) => item.count));
+  return Math.round((count / max) * 100);
+}
+
+function emptySummary(): DashboardSummary {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return {
+    today: { answered: 0, correct: 0, incorrect: 0, correctRate: 0 },
+    mistakes: { unmastered: 0 },
+    latestExam: null,
+    calendar: {
+      year,
+      month,
+      total: 0,
+      days: Array.from({ length: daysInMonth }, (_value, index) => ({ day: index + 1, count: 0 }))
+    },
+    coverage: [
+      { subject: "programming", count: 0 },
+      { subject: "security_privacy", count: 0 },
+      { subject: "refactoring", count: 0 }
+    ]
+  };
 }

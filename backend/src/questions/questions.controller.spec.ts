@@ -7,18 +7,23 @@ describe("QuestionsController HTTP", () => {
   it("serves public list and detail routes through /api/questions", async () => {
     const service = {
       listPublic: jest.fn().mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 }),
-      getPublicDetail: jest.fn().mockResolvedValue({ id: "q1", stemHtml: "<p>safe</p>" })
+      getPublicDetail: jest.fn().mockResolvedValue({ id: "q1", stemHtml: "<p>safe</p>" }),
+      getReciteDetail: jest.fn().mockResolvedValue({ id: "q1", stemHtml: "<p>safe</p>", correctAnswers: ["A"] })
     };
     const app = await createApp(service);
 
     try {
       const list = await fetchJson(app, "/api/questions?subject=programming&page=1");
       const detail = await fetchJson(app, "/api/questions/q1");
+      const recite = await fetchJson(app, "/api/questions/q1/recite");
 
       expect(list.status).toBe(200);
       expect(service.listPublic).toHaveBeenCalledWith(expect.objectContaining({ subject: "programming", page: "1" }));
       expect(detail.status).toBe(200);
       expect(detail.body).toMatchObject({ id: "q1", stemHtml: "<p>safe</p>" });
+      expect(recite.status).toBe(200);
+      expect(service.getReciteDetail).toHaveBeenCalledWith("q1");
+      expect(recite.body).toMatchObject({ id: "q1", correctAnswers: ["A"] });
     } finally {
       await app.close();
     }

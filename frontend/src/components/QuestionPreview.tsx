@@ -1,51 +1,69 @@
 import { Bookmark, BookOpenCheck, Play } from "lucide-react";
 import { Link } from "react-router-dom";
-
-export interface PreviewOption {
-  key: string;
-  label: string;
-  correct?: boolean;
-}
+import type { QuestionDetail } from "../api/types";
+import { getLanguageLabel, getLevelLabel, getQuestionTypeLabel, getSubjectLabel, type Language, type Level, type QuestionType, type Subject } from "../domain/labels";
 
 export interface QuestionPreviewProps {
-  title: string;
-  code?: string;
-  description: string;
-  options: PreviewOption[];
-  tags: string[];
+  detail?: QuestionDetail | null;
+  loading?: boolean;
 }
 
-export function QuestionPreview({ title, code, description, options, tags }: QuestionPreviewProps) {
+export function QuestionPreview({ detail, loading = false }: QuestionPreviewProps) {
+  if (loading) {
+    return (
+      <aside className="detail-panel panel question-preview-card" aria-label="题目预览">
+        <h2>题目预览</h2>
+        <p>正在加载选中题目...</p>
+      </aside>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <aside className="detail-panel panel question-preview-card" aria-label="题目预览">
+        <h2>题目预览</h2>
+        <p>请选择左侧真实题目查看预览。</p>
+      </aside>
+    );
+  }
+
+  const practiceHref = `/practice?questionId=${encodeURIComponent(detail.id)}`;
+  const reciteHref = `/practice?mode=recite&questionId=${encodeURIComponent(detail.id)}`;
+
   return (
     <aside className="detail-panel panel question-preview-card" aria-label="题目预览">
       <h2>题目预览</h2>
-      <h3>{title}</h3>
-      {code ? (
-        <pre>
-          <code>{code}</code>
-        </pre>
-      ) : null}
-      <p>{description}</p>
+      <div className="question-meta">
+        <span>{getSubjectLabel(detail.source.subject as Subject, "short")}</span>
+        {detail.source.language ? <span>{getLanguageLabel(detail.source.language as Language)}</span> : null}
+        <span>{getLevelLabel(detail.source.level as Level)}</span>
+        <span>{getQuestionTypeLabel(detail.source.type as QuestionType)}</span>
+      </div>
+      <div className="markdown-preview-body" dangerouslySetInnerHTML={{ __html: detail.stemHtml }} />
+      {detail.memo ? <p>{detail.memo}</p> : null}
       <div className="preview-options">
-        {options.map((option) => (
-          <div className={option.correct ? "preview-option correct" : "preview-option"} key={option.key}>
-            {option.key}. {option.label}
+        {detail.options.map((option) => (
+          <div className="preview-option" key={option.key}>
+            {option.key}. {option.text}
           </div>
         ))}
       </div>
       <div className="tag-row">
-        {tags.map((tag) => (
+        {detail.tags.map((tag) => (
           <span key={tag}>{tag}</span>
         ))}
       </div>
+      <p>
+        真实练习统计：作答 {detail.stats.totalAttempts} 次，正确率 {detail.stats.correctRate}%。
+      </p>
       <div className="button-row">
-        <Link className="primary-button" to="/practice">
+        <Link className="primary-button" to={practiceHref}>
           <Play aria-hidden="true" size={17} />
           练习此题
         </Link>
-        <Link className="secondary-button" to="/recite">
+        <Link className="secondary-button" to={reciteHref}>
           <BookOpenCheck aria-hidden="true" size={17} />
-          背诵
+          背诵此题
         </Link>
         <button className="icon-button" type="button" aria-label="收藏题目">
           <Bookmark aria-hidden="true" size={17} />

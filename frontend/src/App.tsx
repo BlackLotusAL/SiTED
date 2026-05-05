@@ -10,7 +10,6 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { ExamPage } from "./pages/ExamPage";
 import { PracticePage } from "./pages/PracticePage";
 import { QuestionsPage } from "./pages/QuestionsPage";
-import { RecitePage } from "./pages/RecitePage";
 import { ReviewPage } from "./pages/ReviewPage";
 import { APP_ROUTES, pathToRoutePath } from "./routes/config";
 import { ProtectedRoute } from "./routes/ProtectedRoute";
@@ -38,6 +37,7 @@ function App({ loadIdentity }: AppProps) {
             <Route path={pathToRoutePath(route.path)} element={element} key={route.path} />
           );
         })}
+        <Route path="recite" element={<Navigate replace to="/practice?mode=recite" />} />
         <Route path="*" element={<Navigate replace to="/" />} />
       </Route>
     </Routes>
@@ -50,7 +50,6 @@ const LEARNER_PAGES: Record<string, ReactElement> = {
   "/": <DashboardPage />,
   "/questions": <QuestionsPage />,
   "/practice": <PracticePage />,
-  "/recite": <RecitePage />,
   "/review": <ReviewPage />,
   "/exam": <ExamPage />,
   "/admin/questions": <AdminQuestionsPage />,

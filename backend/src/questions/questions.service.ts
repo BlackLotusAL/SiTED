@@ -62,6 +62,15 @@ export class QuestionsService {
     return this.toPublicDetail(question);
   }
 
+  async getReciteDetail(id: string) {
+    const question = await this.prisma.question.findFirst({ where: { id, status: "published" } });
+    if (question === null) {
+      throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
+    }
+
+    return this.toReciteDetail(question);
+  }
+
   async listAdmin(query: QuestionListQuery) {
     const status = isValidQuestionStatus(query.status) ? query.status : undefined;
     const { where, page, pageSize, skip, take } = this.buildListInput(query, status);
@@ -189,7 +198,8 @@ export class QuestionsService {
         { stemMd: { contains: keyword, mode: "insensitive" } },
         { explanationMd: { contains: keyword, mode: "insensitive" } },
         { memo: { contains: keyword, mode: "insensitive" } },
-        { sourceCode: { contains: keyword, mode: "insensitive" } }
+        { sourceCode: { contains: keyword, mode: "insensitive" } },
+        { tags: { has: keyword } }
       ];
     }
 
@@ -259,6 +269,13 @@ export class QuestionsService {
         correctAttempts: question.correctAttempts,
         correctRate: correctRate(question)
       }
+    };
+  }
+
+  private toReciteDetail(question: QuestionRecord) {
+    return {
+      ...this.toPublicDetail(question),
+      correctAnswers: question.correctAnswers
     };
   }
 
