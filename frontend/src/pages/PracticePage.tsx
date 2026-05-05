@@ -6,11 +6,9 @@ import type { PracticeSubmitResponse, QuestionDetail, QuestionListItem, Question
 import {
   getLanguageLabel,
   getLevelLabel,
-  getQuestionTypeLabel,
   getSubjectLabel,
   type Language,
   type Level,
-  type QuestionType,
   type Subject
 } from "../domain/labels";
 
