@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 
 export interface TrendChartPoint {
   label: string;
@@ -33,25 +33,36 @@ export function TrendChart({ title, unit, data, max, color }: TrendChartProps) {
         <span>0</span>
       </div>
       <div className="mini-chart-area">
-        {data.map((point) => (
-          <button
-            aria-label={`${point.label} ${title} ${point.value} ${unit}`}
-            className={`chart-bar ${color}`}
-            data-testid="trend-chart-bar"
-            key={point.label}
-            onBlur={() => setActivePoint(null)}
-            onFocus={() => setActivePoint(point)}
-            onMouseEnter={() => setActivePoint(point)}
-            onMouseLeave={() => setActivePoint(null)}
-            style={{ height: `${Math.max(8, Math.round((point.value / axisMax) * 100))}%` }}
-            type="button"
-          />
-        ))}
-        {activePoint ? (
-          <div className="chart-tooltip" role="tooltip">
-            {activePoint.label} {title} {activePoint.value.toLocaleString("zh-CN")} {unit}
-          </div>
-        ) : null}
+        {data.map((point, index) => {
+          const heightPercent = Math.max(8, Math.round((point.value / axisMax) * 100));
+          const tooltipSide = index >= data.length - 2 ? "is-left" : "is-right";
+
+          return (
+            <div
+              className="chart-bar-slot"
+              data-testid="trend-chart-bar-slot"
+              key={point.label}
+              style={{ "--bar-height": `${heightPercent}%` } as CSSProperties}
+            >
+              <button
+                aria-label={`${point.label} ${title} ${point.value} ${unit}`}
+                className={`chart-bar ${color}`}
+                data-testid="trend-chart-bar"
+                onBlur={() => setActivePoint(null)}
+                onFocus={() => setActivePoint(point)}
+                onMouseEnter={() => setActivePoint(point)}
+                onMouseLeave={() => setActivePoint(null)}
+                style={{ height: "var(--bar-height)" }}
+                type="button"
+              />
+              {activePoint === point ? (
+                <div className={`chart-tooltip ${tooltipSide}`} role="tooltip">
+                  {title} {point.value.toLocaleString("zh-CN")} {unit}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
       <div className="mini-x-axis" aria-hidden="true">
         {data.map((point) => (

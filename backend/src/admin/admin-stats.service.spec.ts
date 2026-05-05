@@ -42,6 +42,20 @@ describe("AdminStatsService", () => {
     expect(prisma.examAttempt.groupBy).not.toHaveBeenCalled();
   });
 
+  it("builds low-correct-rate ranking from actual practice attempts instead of question counters", async () => {
+    const prisma = prismaMock();
+    const service = new AdminStatsService(prisma as never, () => new Date("2026-05-03T12:00:00.000Z"));
+
+    await service.getStats();
+
+    const lowRateSql = prisma.$queryRaw.mock.calls[0][0].sql as string;
+    expect(lowRateSql).toContain('FROM "Question" q');
+    expect(lowRateSql).toContain('JOIN "PracticeAttempt" pa');
+    expect(lowRateSql).toContain('COUNT(pa.id)::int AS "totalAttempts"');
+    expect(lowRateSql).toContain('COUNT(pa.id) FILTER (WHERE pa."isCorrect")::int AS "correctAttempts"');
+    expect(lowRateSql).not.toContain('"totalAttempts" > 0');
+  });
+
   it("does not lose low-correct-rate questions outside the first 100 most-attempted rows", async () => {
     const prisma = prismaMock();
     prisma.$queryRaw.mockReset();

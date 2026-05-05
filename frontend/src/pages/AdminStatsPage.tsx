@@ -1,77 +1,105 @@
+import { useEffect, useMemo, useState } from "react";
+import { apiClient } from "../api/client";
 import { StatsPanel } from "../components/StatsPanel";
-import { TrendChart } from "../components/TrendChart";
+import { TrendChart, type TrendChartPoint } from "../components/TrendChart";
+import { getSubjectLabel, type Subject } from "../domain/labels";
 
-const distribution = [
-  { label: "科目二（编程知识）", count: 6420, percent: 74 },
-  { label: "科目三（安全质量隐私）", count: 3860, percent: 48 },
-  { label: "科目四（重构知识）", count: 2206, percent: 31 }
-];
+interface AdminStatsResponse {
+  questions: {
+    total: number;
+    published: number;
+    bySubject: Array<{ subject: Subject; count: number }>;
+  };
+  lowCorrectRateQuestions: Array<{
+    id: string;
+    sourceCode: string | null;
+    stemMd: string;
+    totalAttempts: number;
+    correctAttempts: number;
+    correctRate: number;
+  }>;
+  today: {
+    visitors: number;
+    practiceQuestions: number;
+    exams: number;
+  };
+  trends: {
+    visitors: TrendResponsePoint[];
+    practiceQuestions: TrendResponsePoint[];
+    exams: TrendResponsePoint[];
+  };
+}
 
-const lowAccuracyQuestions = [
-  ["SQL 注入参数边界", "38%"],
-  ["volatile 与原子性", "42%"],
-  ["线程池拒绝策略", "45%"],
-  ["隐私数据脱敏范围", "47%"],
-  ["接口拆分原则", "49%"],
-  ["异常传播边界", "51%"],
-  ["资源释放顺序", "52%"],
-  ["最小权限原则", "53%"],
-  ["并发集合选择", "55%"],
-  ["重构回归风险", "57%"]
-];
-
-const visitorTrend = [
-  { label: "4/27", value: 58 },
-  { label: "4/28", value: 64 },
-  { label: "4/29", value: 61 },
-  { label: "4/30", value: 79 },
-  { label: "5/1", value: 83 },
-  { label: "5/2", value: 91 },
-  { label: "5/3", value: 86 }
-];
-
-const practiceTrend = [
-  { label: "4/27", value: 760 },
-  { label: "4/28", value: 940 },
-  { label: "4/29", value: 880 },
-  { label: "4/30", value: 1030 },
-  { label: "5/1", value: 1190 },
-  { label: "5/2", value: 1360 },
-  { label: "5/3", value: 1284 }
-];
-
-const examTrend = [
-  { label: "4/27", value: 18 },
-  { label: "4/28", value: 21 },
-  { label: "4/29", value: 20 },
-  { label: "4/30", value: 29 },
-  { label: "5/1", value: 34 },
-  { label: "5/2", value: 43 },
-  { label: "5/3", value: 37 }
-];
+interface TrendResponsePoint {
+  date: string;
+  count: number;
+}
 
 export function AdminStatsPage() {
+  const [stats, setStats] = useState<AdminStatsResponse | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    apiClient
+      .get<AdminStatsResponse>("/admin/stats")
+      .then((response) => {
+        if (!cancelled) {
+          setStats(response ?? null);
+          setLoadError(response === undefined);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoadError(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const viewModel = useMemo(() => (stats ? toViewModel(stats) : null), [stats]);
+
+  if (loadError) {
+    return (
+      <section className="panel" role="alert">
+        运营数据加载失败，请稍后重试。
+      </section>
+    );
+  }
+
+  if (viewModel === null) {
+    return (
+      <section className="panel" aria-busy="true">
+        运营数据加载中...
+      </section>
+    );
+  }
+
   return (
     <>
       <div className="stats-kpis">
-        <MetricCard label="当前题库数量" value="12,486" note="已发布 11,920" />
-        <MetricCard className="accent-blue" label="今日访问用户" value="86" note="较昨日 +12" />
-        <MetricCard className="accent-violet" label="今日练习题数" value="1,284" note="人均 14.9 题" />
-        <MetricCard className="accent-amber" label="今日模拟考" value="37" note="完成率 78%" />
+        <MetricCard label="当前题库数量" value={viewModel.questionTotal} note={`已发布 ${viewModel.publishedQuestions}`} />
+        <MetricCard className="accent-blue" label="今日访问用户" value={viewModel.todayVisitors} note={viewModel.visitorDeltaNote} />
+        <MetricCard className="accent-violet" label="今日练习题数" value={viewModel.todayPracticeQuestions} note={viewModel.averagePracticeNote} />
+        <MetricCard className="accent-amber" label="今日模拟考" value={viewModel.todayExams} note="今日记录" />
       </div>
 
       <div className="stats-layout admin-stats-layout">
         <StatsPanel title="题库统计">
           <div className="bank-stat-summary">
             <span>题目总量</span>
-            <strong>12,486</strong>
+            <strong>{viewModel.questionTotal}</strong>
             <small>覆盖 3 个科目、6 种语言、3 个级别</small>
           </div>
           <div className="distribution-list">
-            {distribution.map((item) => (
+            {viewModel.distribution.map((item) => (
               <div className="distribution-row" key={item.label}>
                 <span>{item.label}</span>
-                <strong>{item.count.toLocaleString("zh-CN")}</strong>
+                <strong>{item.count}</strong>
                 <div className="distribution-track">
                   <i style={{ width: `${item.percent}%` }}></i>
                 </div>
@@ -80,22 +108,26 @@ export function AdminStatsPage() {
           </div>
           <div className="ranking-panel">
             <h3>Top10 低正确率题目</h3>
-            <ol className="ranking-list">
-              {lowAccuracyQuestions.map(([title, accuracy]) => (
-                <li key={title}>
-                  <span>{title}</span>
-                  <b>{accuracy}</b>
-                </li>
-              ))}
-            </ol>
+            {viewModel.lowCorrectRateQuestions.length > 0 ? (
+              <ol className="ranking-list">
+                {viewModel.lowCorrectRateQuestions.map((question) => (
+                  <li key={question.id}>
+                    <span>{question.title}</span>
+                    <b>{question.correctRate}</b>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="empty-state">暂无练习记录。</p>
+            )}
           </div>
         </StatsPanel>
 
         <StatsPanel title="训练统计">
           <div className="trend-charts" aria-label="近 7 天三项指标独立趋势图">
-            <TrendChart color="blue" data={visitorTrend} max={100} title="访问用户" unit="人" />
-            <TrendChart color="violet" data={practiceTrend} max={1500} title="练习题数" unit="题" />
-            <TrendChart color="amber" data={examTrend} max={50} title="模拟考" unit="次" />
+            <TrendChart color="blue" data={viewModel.visitorTrend} title="访问用户" unit="人" />
+            <TrendChart color="violet" data={viewModel.practiceTrend} title="练习题数" unit="题" />
+            <TrendChart color="amber" data={viewModel.examTrend} title="模拟考" unit="次" />
           </div>
         </StatsPanel>
       </div>
@@ -111,4 +143,74 @@ function MetricCard({ label, value, note, className = "" }: { label: string; val
       <small>{note}</small>
     </div>
   );
+}
+
+function toViewModel(stats: AdminStatsResponse) {
+  const visitorTrend = toTrendChartData(stats.trends.visitors);
+  const practiceTrend = toTrendChartData(stats.trends.practiceQuestions);
+  const examTrend = toTrendChartData(stats.trends.exams);
+  const yesterdayVisitors = stats.trends.visitors.at(-2)?.count ?? 0;
+  const visitorDelta = stats.today.visitors - yesterdayVisitors;
+  const maxSubjectCount = Math.max(...stats.questions.bySubject.map((item) => item.count), 1);
+
+  return {
+    questionTotal: formatNumber(stats.questions.total),
+    publishedQuestions: formatNumber(stats.questions.published),
+    todayVisitors: formatNumber(stats.today.visitors),
+    todayPracticeQuestions: formatNumber(stats.today.practiceQuestions),
+    todayExams: formatNumber(stats.today.exams),
+    visitorDeltaNote: `较昨日 ${formatSignedNumber(visitorDelta)}`,
+    averagePracticeNote: `人均 ${formatAverage(stats.today.practiceQuestions, stats.today.visitors)} 题`,
+    distribution: stats.questions.bySubject.map((item) => ({
+      label: getSubjectLabel(item.subject),
+      count: formatNumber(item.count),
+      percent: Math.round((item.count / maxSubjectCount) * 100)
+    })),
+    lowCorrectRateQuestions: stats.lowCorrectRateQuestions.map((question) => ({
+      id: question.id,
+      title: toQuestionTitle(question),
+      correctRate: `${correctRateFromAttempts(question)}%`
+    })),
+    visitorTrend,
+    practiceTrend,
+    examTrend
+  };
+}
+
+function toTrendChartData(points: TrendResponsePoint[]): TrendChartPoint[] {
+  return points.map((point) => ({
+    label: formatTrendDate(point.date),
+    value: point.count
+  }));
+}
+
+function formatNumber(value: number): string {
+  return value.toLocaleString("zh-CN");
+}
+
+function formatSignedNumber(value: number): string {
+  return `${value >= 0 ? "+" : ""}${formatNumber(value)}`;
+}
+
+function formatAverage(total: number, count: number): string {
+  return count === 0 ? "0.0" : (total / count).toFixed(1);
+}
+
+function correctRateFromAttempts(question: { totalAttempts: number; correctAttempts: number }): number {
+  return question.totalAttempts === 0 ? 0 : Math.round((question.correctAttempts / question.totalAttempts) * 100);
+}
+
+function formatTrendDate(date: string): string {
+  const [, month, day] = date.split("-");
+  return `${Number(month)}/${Number(day)}`;
+}
+
+function toQuestionTitle(question: { stemMd: string; sourceCode: string | null; id: string }): string {
+  const plainStem = question.stemMd
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`[\]()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return plainStem.slice(0, 32) || question.sourceCode || question.id;
 }
