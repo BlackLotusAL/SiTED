@@ -36,6 +36,34 @@ describe("BookmarksService", () => {
     expect(prisma.bookmark.deleteMany).toHaveBeenCalledWith({ where: { visitorId: "v1", questionId: questionId() } });
     expect(result).toEqual({ deleted: false });
   });
+
+  it("updates note and tags for only the current visitor bookmark with normalized values", async () => {
+    const prisma = prismaMock({ question: null });
+    const service = new BookmarksService(prisma as never);
+
+    const result = await service.update(questionId(), { note: "  focus later  ", tags: [" java ", "", "review", "java"] }, identity());
+
+    expect(prisma.bookmark.updateMany).toHaveBeenCalledWith({
+      where: { visitorId: "v1", questionId: questionId() },
+      data: { note: "focus later", tags: ["java", "review"] }
+    });
+    expect(prisma.bookmark.findUnique).toHaveBeenCalledWith({
+      where: { visitorId_questionId: { visitorId: "v1", questionId: questionId() } }
+    });
+    expect(result).toMatchObject({ id: "b1", questionId: questionId(), note: "focus later", tags: ["java", "review"] });
+  });
+
+  it("stores blank bookmark notes as null", async () => {
+    const prisma = prismaMock({ question: null });
+    const service = new BookmarksService(prisma as never);
+
+    await service.update(questionId(), { note: "   " }, identity());
+
+    expect(prisma.bookmark.updateMany).toHaveBeenCalledWith({
+      where: { visitorId: "v1", questionId: questionId() },
+      data: { note: null }
+    });
+  });
 });
 
 function identity(): RequestIdentity {
@@ -54,7 +82,17 @@ function prismaMock(overrides: { question: unknown; deleteCount?: number }) {
       upsert: jest
         .fn()
         .mockResolvedValue({ id: "b1", visitorId: "v1", questionId: questionId(), createdAt: new Date() }),
-      deleteMany: jest.fn().mockResolvedValue({ count: overrides.deleteCount ?? 1 })
+      deleteMany: jest.fn().mockResolvedValue({ count: overrides.deleteCount ?? 1 }),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUnique: jest.fn().mockResolvedValue({
+        id: "b1",
+        visitorId: "v1",
+        questionId: questionId(),
+        note: "focus later",
+        tags: ["java", "review"],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
     }
   };
 }

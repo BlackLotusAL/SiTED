@@ -63,7 +63,7 @@ describe("ReviewService", () => {
     expect(JSON.stringify(result)).not.toContain("options");
   });
 
-  it("returns practice and exam records for the current visitor without creating or scoring exams", async () => {
+  it("returns only exam records for the current visitor and does not query single-question practice attempts", async () => {
     const prisma = prismaMock({
       practiceAttempts: [
         {
@@ -96,27 +96,19 @@ describe("ReviewService", () => {
 
     const result = await service.listRecords(identity());
 
-    expect(prisma.practiceAttempt.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { visitorId: "v1" },
-        select: expect.objectContaining({
-          id: true,
-          question: { select: questionSelect() }
-        })
-      })
-    );
+    expect(prisma.practiceAttempt.findMany).not.toHaveBeenCalled();
     expect(prisma.examAttempt.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { visitorId: "v1" } }));
-    expect(result.practice.items[0]).toMatchObject({ kind: "practice", id: "pa1", isCorrect: true });
-    expect(result.exams.items[0]).toMatchObject({
+    expect(result.items[0]).toMatchObject({
       kind: "exam",
       id: "ea1",
       status: "submitted",
       scorePercent: 88.5,
       isPassed: true
     });
-    expect(JSON.stringify(result.practice)).not.toContain("correctAnswers");
-    expect(JSON.stringify(result.practice)).not.toContain("createdByIp");
-    expect(JSON.stringify(result.practice)).not.toContain("options");
+    expect(JSON.stringify(result)).not.toContain("pa1");
+    expect(JSON.stringify(result)).not.toContain("correctAnswers");
+    expect(JSON.stringify(result)).not.toContain("createdByIp");
+    expect(JSON.stringify(result)).not.toContain("options");
   });
 
   it("returns empty review collections for a visitor that has no persisted visitor row", async () => {
@@ -125,7 +117,61 @@ describe("ReviewService", () => {
 
     await expect(service.listMistakes(identity())).resolves.toEqual({ items: [] });
     await expect(service.listBookmarks(identity())).resolves.toEqual({ items: [] });
-    await expect(service.listRecords(identity())).resolves.toEqual({ practice: { items: [] }, exams: { items: [] } });
+    await expect(service.listRecords(identity())).resolves.toEqual({ items: [] });
+  });
+
+  it("marks only the current visitor mistake mastered and returns the updated mastery status", async () => {
+    const prisma = prismaMock({
+      mistake: mistakeRecord({ id: "m1", consecutiveCorrectCount: 1, isMastered: false }),
+      updatedMistake: mistakeRecord({ id: "m1", consecutiveCorrectCount: 3, isMastered: true, masteredAt: now() })
+    });
+    const service = new ReviewService(prisma as never);
+
+    const result = await service.updateMistakeMastery("m1", { isMastered: true }, identity());
+
+    expect(prisma.mistake.findFirst).toHaveBeenCalledWith({
+      where: { id: "m1", visitorId: "v1" },
+      select: expect.objectContaining({ id: true, consecutiveCorrectCount: true })
+    });
+    expect(prisma.mistake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "m1" },
+        data: expect.objectContaining({
+          isMastered: true,
+          masteredAt: expect.any(Date),
+          consecutiveCorrectCount: 3
+        })
+      })
+    );
+    expect(result.masteryStatus).toEqual({ code: "mastered", label: "\u5df2\u638c\u63e1", color: "success" });
+  });
+
+  it("cancels mastery for only the current visitor mistake", async () => {
+    const prisma = prismaMock({
+      mistake: mistakeRecord({ id: "m1", consecutiveCorrectCount: 3, isMastered: true }),
+      updatedMistake: mistakeRecord({ id: "m1", consecutiveCorrectCount: 0, isMastered: false, masteredAt: null })
+    });
+    const service = new ReviewService(prisma as never);
+
+    const result = await service.updateMistakeMastery("m1", { isMastered: false }, identity());
+
+    expect(prisma.mistake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "m1" },
+        data: { isMastered: false, masteredAt: null, consecutiveCorrectCount: 0 }
+      })
+    );
+    expect(result.masteryStatus).toEqual({ code: "unmastered", label: "\u672a\u638c\u63e1", color: "danger" });
+  });
+
+  it("removes only the current visitor mistake idempotently", async () => {
+    const prisma = prismaMock({ deleteCount: 1 });
+    const service = new ReviewService(prisma as never);
+
+    const result = await service.removeMistake("m1", identity());
+
+    expect(prisma.mistake.deleteMany).toHaveBeenCalledWith({ where: { id: "m1", visitorId: "v1" } });
+    expect(result).toEqual({ deleted: true });
   });
 });
 
@@ -137,6 +183,9 @@ function prismaMock(
   overrides: {
     visitor?: unknown;
     mistakes?: unknown[];
+    mistake?: unknown;
+    updatedMistake?: unknown;
+    deleteCount?: number;
     bookmarks?: unknown[];
     practiceAttempts?: unknown[];
     examAttempts?: unknown[];
@@ -147,7 +196,10 @@ function prismaMock(
       findUnique: jest.fn().mockResolvedValue(overrides.visitor === undefined ? { id: "v1" } : overrides.visitor)
     },
     mistake: {
-      findMany: jest.fn().mockResolvedValue(overrides.mistakes ?? [])
+      findMany: jest.fn().mockResolvedValue(overrides.mistakes ?? []),
+      findFirst: jest.fn().mockResolvedValue(overrides.mistake ?? null),
+      update: jest.fn().mockResolvedValue(overrides.updatedMistake ?? overrides.mistake ?? mistakeRecord()),
+      deleteMany: jest.fn().mockResolvedValue({ count: overrides.deleteCount ?? 0 })
     },
     bookmark: {
       findMany: jest.fn().mockResolvedValue(overrides.bookmarks ?? [])

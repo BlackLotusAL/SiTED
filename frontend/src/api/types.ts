@@ -127,6 +127,75 @@ export interface DashboardSummary {
   coverage: Array<{ subject: string; count: number }>;
 }
 
+export interface ReviewQuestionSummary {
+  id: string;
+  sourceCode: string | null;
+  subject: string;
+  language: string | null;
+  level: string;
+  type: string;
+  stemMd: string;
+  memo: string | null;
+  tags: string[];
+  status: string;
+  stats: {
+    totalAttempts: number;
+    correctAttempts: number;
+    correctRate: number;
+  };
+}
+
+export interface ReviewMistakesResponse {
+  items: ReviewMistakeItem[];
+}
+
+export interface ReviewMistakeItem {
+  id: string;
+  questionId: string;
+  wrongCount: number;
+  consecutiveCorrectCount: number;
+  isMastered: boolean;
+  lastWrongAt: string | null;
+  masteredAt: string | null;
+  masteryStatus: {
+    code: string;
+    label: string;
+    color: "danger" | "warning" | "success";
+  };
+  question: ReviewQuestionSummary;
+}
+
+export interface ReviewBookmarksResponse {
+  items: ReviewBookmarkItem[];
+}
+
+export interface ReviewBookmarkItem {
+  id: string;
+  questionId: string;
+  note: string | null;
+  tags: string[];
+  createdAt: string;
+  question: ReviewQuestionSummary;
+}
+
+export interface ReviewRecordsResponse {
+  items: ReviewExamRecord[];
+}
+
+export interface ReviewExamRecord {
+  kind: "exam";
+  id: string;
+  subject: string;
+  language: string | null;
+  level: string;
+  status: "in_progress" | "submitted" | "abandoned";
+  scorePercent: number | null;
+  isPassed: boolean | null;
+  startedAt: string;
+  deadlineAt: string;
+  submittedAt: string | null;
+}
+
 export interface ExamListResponse {
   items: ExamListItem[];
 }

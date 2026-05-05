@@ -31,6 +31,27 @@ describe("BookmarksController HTTP", () => {
       await app.close();
     }
   });
+
+  it("routes bookmark note and tag updates with request identity", async () => {
+    const service = bookmarksServiceMock();
+    const app = await createApp(service, true);
+
+    try {
+      const response = await fetchJson(app, `/api/bookmarks/${questionId()}`, {
+        method: "PATCH",
+        body: { note: "focus", tags: ["java"] }
+      });
+
+      expect(response.status).toBe(200);
+      expect(service.update).toHaveBeenCalledWith(
+        questionId(),
+        { note: "focus", tags: ["java"] },
+        expect.objectContaining({ ip: "10.0.0.5" })
+      );
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 async function createApp(service: ReturnType<typeof bookmarksServiceMock>, withIdentity: boolean): Promise<INestApplication> {
@@ -50,9 +71,13 @@ async function createApp(service: ReturnType<typeof bookmarksServiceMock>, withI
   return app;
 }
 
-async function fetchJson(app: INestApplication, path: string, init: { method: string }) {
+async function fetchJson(app: INestApplication, path: string, init: { method: string; body?: unknown }) {
   const server = app.getHttpServer() as { address: () => { port: number } };
-  const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, { method: init.method });
+  const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {
+    method: init.method,
+    headers: init.body === undefined ? undefined : { "content-type": "application/json" },
+    body: init.body === undefined ? undefined : JSON.stringify(init.body)
+  });
   return {
     status: response.status,
     body: await response.json()
@@ -62,7 +87,8 @@ async function fetchJson(app: INestApplication, path: string, init: { method: st
 function bookmarksServiceMock() {
   return {
     add: jest.fn().mockResolvedValue({ id: "b1" }),
-    remove: jest.fn().mockResolvedValue({ deleted: true })
+    remove: jest.fn().mockResolvedValue({ deleted: true }),
+    update: jest.fn().mockResolvedValue({ id: "b1" })
   };
 }
 

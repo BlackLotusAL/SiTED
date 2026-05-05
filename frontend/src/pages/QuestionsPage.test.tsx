@@ -7,14 +7,35 @@ import { QuestionsPage } from "./QuestionsPage";
 
 vi.mock("../api/client", () => ({
   apiClient: {
-    get: vi.fn()
+    get: vi.fn(),
+    post: vi.fn(),
+    delete: vi.fn()
   }
 }));
 
 describe("QuestionsPage", () => {
+  let bookmarkedQuestionIds: string[];
+
   beforeEach(() => {
     localStorage.clear();
+    bookmarkedQuestionIds = ["q-1"];
+
+    vi.mocked(apiClient.get).mockReset();
+    vi.mocked(apiClient.post).mockReset();
+    vi.mocked(apiClient.delete).mockReset();
     vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/review/bookmarks") {
+        return {
+          items: bookmarkedQuestionIds.map((questionId) => ({
+            id: `bookmark-${questionId}`,
+            questionId,
+            note: null,
+            tags: [],
+            createdAt: "2026-05-05T02:00:00.000Z",
+            question: listItem(questionId, questionId)
+          }))
+        };
+      }
       if (path === "/questions/q-1") {
         return detail("q-1", "Real detail one", "First option");
       }
@@ -40,6 +61,8 @@ describe("QuestionsPage", () => {
       }
       throw new Error(`Unexpected API path: ${path}`);
     });
+    vi.mocked(apiClient.post).mockResolvedValue({ id: "bookmark-q-2" });
+    vi.mocked(apiClient.delete).mockResolvedValue({ deleted: true });
   });
 
   afterEach(() => {
@@ -49,14 +72,11 @@ describe("QuestionsPage", () => {
   });
 
   it("loads every matching real question page and previews the selected question detail", async () => {
-    render(
-      <MemoryRouter>
-        <QuestionsPage />
-      </MemoryRouter>
-    );
+    renderQuestionsPage();
 
     expect(await screen.findByText("Real question one")).toBeInTheDocument();
     expect(await screen.findByText("Real question two")).toBeInTheDocument();
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith("/review/bookmarks");
     expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(expect.stringContaining("pageSize=100"));
     expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(expect.stringContaining("page=2"));
 
@@ -106,7 +126,50 @@ describe("QuestionsPage", () => {
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining("type=multiple")));
     expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining("keyword=security"));
   });
+
+  it("initializes bookmark state and keeps list and preview bookmark buttons in sync", async () => {
+    renderQuestionsPage();
+
+    const bookmarkedListButton = await screen.findByRole("button", { name: "取消收藏：Real question one" });
+    expect(bookmarkedListButton).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: "取消收藏题目" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByText("Real question two"));
+    expect(await screen.findByRole("button", { name: "收藏：Real question two" })).toHaveAttribute("aria-pressed", "false");
+    const previewBookmarkButton = await screen.findByRole("button", { name: "收藏题目" });
+    fireEvent.click(previewBookmarkButton);
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith("/bookmarks/q-2", {}));
+    expect(await screen.findByRole("button", { name: "取消收藏：Real question two" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "取消收藏题目" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "取消收藏：Real question two" }));
+    await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith("/bookmarks/q-2"));
+    expect(await screen.findByRole("button", { name: "收藏：Real question two" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("shows an inline alert when a bookmark API call fails", async () => {
+    bookmarkedQuestionIds = [];
+    vi.mocked(apiClient.post).mockRejectedValueOnce(new Error("network"));
+
+    renderQuestionsPage();
+
+    const listButton = await screen.findByRole("button", { name: "收藏：Real question one" });
+    fireEvent.click(listButton);
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith("/bookmarks/q-1", {}));
+    expect(await screen.findByRole("alert")).toHaveTextContent("收藏操作失败，请稍后重试。");
+    expect(screen.getByRole("button", { name: "收藏：Real question one" })).toHaveAttribute("aria-pressed", "false");
+  });
 });
+
+function renderQuestionsPage() {
+  return render(
+    <MemoryRouter>
+      <QuestionsPage />
+    </MemoryRouter>
+  );
+}
 
 function listItem(id: string, stemMd: string) {
   return {

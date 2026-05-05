@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import type { ExamAttempt } from "@prisma/client";
 import type { RequestIdentity } from "../identity/identity.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -93,56 +93,93 @@ export class ReviewService {
   async listRecords(identity: RequestIdentity) {
     const visitor = await this.findVisitor(identity);
     if (visitor === null) {
-      return { practice: { items: [] }, exams: { items: [] } };
+      return { items: [] };
     }
 
-    const [practiceAttempts, examAttempts] = await Promise.all([
-      this.prisma.practiceAttempt.findMany({
-        where: { visitorId: visitor.id },
-        select: {
-          id: true,
-          questionId: true,
-          selectedKeys: true,
-          isCorrect: true,
-          mode: true,
-          durationSec: true,
-          createdAt: true,
-          question: { select: QUESTION_SUMMARY_SELECT }
-        },
-        orderBy: { createdAt: "desc" },
-        take: 100
-      }),
-      this.prisma.examAttempt.findMany({
-        where: { visitorId: visitor.id },
-        select: {
-          id: true,
-          subject: true,
-          language: true,
-          level: true,
-          status: true,
-          scorePercent: true,
-          isPassed: true,
-          startedAt: true,
-          deadlineAt: true,
-          submittedAt: true
-        },
-        orderBy: { startedAt: "desc" },
-        take: 100
-      })
-    ]);
+    const examAttempts = await this.prisma.examAttempt.findMany({
+      where: { visitorId: visitor.id },
+      select: {
+        id: true,
+        subject: true,
+        language: true,
+        level: true,
+        status: true,
+        scorePercent: true,
+        isPassed: true,
+        startedAt: true,
+        deadlineAt: true,
+        submittedAt: true
+      },
+      orderBy: [{ submittedAt: "desc" }, { startedAt: "desc" }],
+      take: 100
+    });
 
     return {
-      practice: {
-        items: practiceAttempts.map(toPracticeRecord)
-      },
-      exams: {
-        items: examAttempts.map(toExamRecord)
-      }
+      items: examAttempts.map(toExamRecord).sort((left, right) => recordTime(right) - recordTime(left))
     };
+  }
+
+  async updateMistakeMastery(id: string, input: unknown, identity: RequestIdentity) {
+    const isMastered = normalizeMistakeUpdateInput(input);
+    const visitor = await this.requireVisitor(identity);
+    const existing = await this.prisma.mistake.findFirst({
+      where: { id, visitorId: visitor.id },
+      select: {
+        id: true,
+        questionId: true,
+        wrongCount: true,
+        consecutiveCorrectCount: true,
+        isMastered: true,
+        lastWrongAt: true,
+        masteredAt: true,
+        question: { select: QUESTION_SUMMARY_SELECT }
+      }
+    });
+
+    if (existing === null) {
+      throw new NotFoundException({ code: "MISTAKE_NOT_FOUND", message: "Mistake was not found" });
+    }
+
+    const updated = await this.prisma.mistake.update({
+      where: { id },
+      data: isMastered
+        ? {
+            isMastered: true,
+            masteredAt: new Date(),
+            consecutiveCorrectCount: Math.max(existing.consecutiveCorrectCount, 3)
+          }
+        : { isMastered: false, masteredAt: null, consecutiveCorrectCount: 0 },
+      select: {
+        id: true,
+        questionId: true,
+        wrongCount: true,
+        consecutiveCorrectCount: true,
+        isMastered: true,
+        lastWrongAt: true,
+        masteredAt: true,
+        question: { select: QUESTION_SUMMARY_SELECT }
+      }
+    });
+
+    return toMistakeItem(updated);
+  }
+
+  async removeMistake(id: string, identity: RequestIdentity) {
+    const visitor = await this.requireVisitor(identity);
+    const result = await this.prisma.mistake.deleteMany({ where: { id, visitorId: visitor.id } });
+    return { deleted: result.count > 0 };
   }
 
   private findVisitor(identity: RequestIdentity): Promise<{ id: string } | null> {
     return this.prisma.visitor.findUnique({ where: { ip: identity.ip }, select: { id: true } });
+  }
+
+  private async requireVisitor(identity: RequestIdentity): Promise<{ id: string }> {
+    const visitor = await this.findVisitor(identity);
+    if (visitor === null) {
+      throw new InternalServerErrorException({ code: "VISITOR_NOT_FOUND", message: "Request visitor was not found" });
+    }
+    return visitor;
   }
 }
 
@@ -161,14 +198,14 @@ type QuestionSummaryRecord = {
   correctAttempts: number;
 };
 
-type PracticeAttemptRecord = {
+type MistakeRecord = {
   id: string;
   questionId: string;
-  selectedKeys: string[];
-  isCorrect: boolean;
-  mode: string;
-  durationSec: number | null;
-  createdAt: Date;
+  wrongCount: number;
+  consecutiveCorrectCount: number;
+  isMastered: boolean;
+  lastWrongAt: Date | null;
+  masteredAt: Date | null;
   question: QuestionSummaryRecord;
 };
 
@@ -177,17 +214,17 @@ type ExamAttemptRecord = Pick<
   "id" | "subject" | "language" | "level" | "status" | "scorePercent" | "isPassed" | "startedAt" | "deadlineAt" | "submittedAt"
 >;
 
-function toPracticeRecord(attempt: PracticeAttemptRecord) {
+function toMistakeItem(mistake: MistakeRecord) {
   return {
-    kind: "practice" as const,
-    id: attempt.id,
-    questionId: attempt.questionId,
-    selectedKeys: attempt.selectedKeys,
-    isCorrect: attempt.isCorrect,
-    mode: attempt.mode,
-    durationSec: attempt.durationSec,
-    createdAt: attempt.createdAt,
-    question: toQuestionSummary(attempt.question)
+    id: mistake.id,
+    questionId: mistake.questionId,
+    wrongCount: mistake.wrongCount,
+    consecutiveCorrectCount: mistake.consecutiveCorrectCount,
+    isMastered: mistake.isMastered,
+    lastWrongAt: mistake.lastWrongAt,
+    masteredAt: mistake.masteredAt,
+    masteryStatus: toMasteryStatus(mistake),
+    question: toQuestionSummary(mistake.question)
   };
 }
 
@@ -205,6 +242,10 @@ function toExamRecord(attempt: ExamAttemptRecord) {
     deadlineAt: attempt.deadlineAt,
     submittedAt: attempt.submittedAt
   };
+}
+
+function recordTime(record: { submittedAt: Date | null; startedAt: Date }): number {
+  return (record.submittedAt ?? record.startedAt).getTime();
 }
 
 function toQuestionSummary(question: QuestionSummaryRecord) {
@@ -233,4 +274,15 @@ function correctRate(question: { totalAttempts: number; correctAttempts: number 
 
 function decimalToNumber(value: ExamAttempt["scorePercent"]): number | null {
   return value === null ? null : Number(value);
+}
+
+function normalizeMistakeUpdateInput(input: unknown): boolean {
+  if (!isRecord(input) || typeof input.isMastered !== "boolean") {
+    throw new BadRequestException({ code: "INVALID_MISTAKE_UPDATE", message: "isMastered must be a boolean" });
+  }
+  return input.isMastered;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

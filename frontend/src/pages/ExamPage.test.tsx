@@ -107,6 +107,16 @@ describe("ExamPage", () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 
+  it("opens a submitted exam review directly from an examId query parameter", async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce(submittedExam());
+
+    renderExam("/exam?examId=exam-1");
+
+    expect(await screen.findByText("回答错误")).toBeInTheDocument();
+    expect(apiClient.get).toHaveBeenCalledWith("/exams/exam-1");
+    expect(apiClient.get).not.toHaveBeenCalledWith("/exams");
+  });
+
   it("warns about unanswered questions before submitting the exam", async () => {
     vi.mocked(apiClient.get)
       .mockResolvedValueOnce({ items: [{ id: "exam-1", status: "in_progress" }] })
@@ -188,9 +198,9 @@ describe("ExamPage", () => {
   });
 });
 
-function renderExam() {
+function renderExam(path = "/exam") {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <ExamPage />
     </MemoryRouter>
   );

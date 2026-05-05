@@ -6,9 +6,12 @@ import { getLanguageLabel, getLevelLabel, getQuestionTypeLabel, getSubjectLabel,
 export interface QuestionPreviewProps {
   detail?: QuestionDetail | null;
   loading?: boolean;
+  isBookmarked?: boolean;
+  isBookmarking?: boolean;
+  onToggleBookmark?: (questionId: string) => void;
 }
 
-export function QuestionPreview({ detail, loading = false }: QuestionPreviewProps) {
+export function QuestionPreview({ detail, loading = false, isBookmarked = false, isBookmarking = false, onToggleBookmark }: QuestionPreviewProps) {
   if (loading) {
     return (
       <aside className="detail-panel panel question-preview-card" aria-label="题目预览">
@@ -29,6 +32,7 @@ export function QuestionPreview({ detail, loading = false }: QuestionPreviewProp
 
   const practiceHref = `/practice?questionId=${encodeURIComponent(detail.id)}`;
   const reciteHref = `/practice?mode=recite&questionId=${encodeURIComponent(detail.id)}`;
+  const bookmarkLabel = isBookmarked ? "取消收藏题目" : "收藏题目";
 
   return (
     <aside className="detail-panel panel question-preview-card" aria-label="题目预览">
@@ -65,7 +69,14 @@ export function QuestionPreview({ detail, loading = false }: QuestionPreviewProp
           <BookOpenCheck aria-hidden="true" size={17} />
           背诵此题
         </Link>
-        <button className="icon-button" type="button" aria-label="收藏题目">
+        <button
+          className={isBookmarked ? "icon-button active" : "icon-button"}
+          type="button"
+          aria-label={bookmarkLabel}
+          aria-pressed={isBookmarked}
+          disabled={isBookmarking}
+          onClick={() => onToggleBookmark?.(detail.id)}
+        >
           <Bookmark aria-hidden="true" size={17} />
         </button>
       </div>
