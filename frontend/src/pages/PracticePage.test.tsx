@@ -56,6 +56,7 @@ describe("PracticePage", () => {
     renderPractice("/practice?subject=programming&language=java&level=working&type=single&keyword=concurrency");
 
     expect(await screen.findByText("Practice question")).toBeInTheDocument();
+    expect(screen.getByText("Practice question").closest(".practice-stem")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /B Wrong option/ }));
     fireEvent.click(screen.getByRole("button", { name: "提交答案" }));
 

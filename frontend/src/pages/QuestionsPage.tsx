@@ -20,6 +20,7 @@ import {
 } from "../domain/labels";
 
 const PAGE_SIZE = 100;
+const FILTER_STORAGE_KEY = "sited.questions.filters.v1";
 
 interface QuestionFilters {
   subject: Subject;
@@ -38,13 +39,17 @@ const DEFAULT_FILTERS: QuestionFilters = {
 };
 
 export function QuestionsPage() {
-  const [filters, setFilters] = useState<QuestionFilters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<QuestionFilters>(() => loadStoredFilters());
   const [questions, setQuestions] = useState<QuestionListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<QuestionDetail | null>(null);
   const [listStatus, setListStatus] = useState<"loading" | "ready" | "error">("loading");
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const practiceHref = useMemo(() => `/practice?${filtersToSearchParams(filters).toString()}`, [filters]);
+
+  useEffect(() => {
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
+  }, [filters]);
 
   useEffect(() => {
     let isMounted = true;
@@ -238,4 +243,36 @@ function plainText(markdown: string): string {
     .replace(/[#>*_`~\-[\]]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function loadStoredFilters(): QuestionFilters {
+  try {
+    const rawFilters = localStorage.getItem(FILTER_STORAGE_KEY);
+    if (rawFilters === null) {
+      return DEFAULT_FILTERS;
+    }
+
+    const parsed = JSON.parse(rawFilters) as Partial<QuestionFilters>;
+    if (!isValidFilters(parsed)) {
+      return DEFAULT_FILTERS;
+    }
+
+    return parsed;
+  } catch {
+    return DEFAULT_FILTERS;
+  }
+}
+
+function isValidFilters(value: Partial<QuestionFilters>): value is QuestionFilters {
+  return (
+    isOneOf(value.subject, SUBJECTS) &&
+    isOneOf(value.language, LANGUAGES) &&
+    isOneOf(value.level, LEVELS) &&
+    isOneOf(value.type, QUESTION_TYPES) &&
+    typeof value.keyword === "string"
+  );
+}
+
+function isOneOf<TValue extends string>(value: unknown, values: readonly TValue[]): value is TValue {
+  return typeof value === "string" && values.includes(value as TValue);
 }

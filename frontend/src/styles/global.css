@@ -493,9 +493,18 @@ a {
 
 .icon-button:disabled,
 .primary-button:disabled,
+.secondary-button:disabled,
 .danger-button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
+}
+
+.secondary-button:disabled,
+.secondary-button:disabled:hover {
+  border-color: #d8deeb;
+  background: #eef1f6;
+  color: #8a93a6;
+  box-shadow: none;
 }
 
 .calendar-grid {
@@ -778,6 +787,10 @@ label {
   gap: 10px;
 }
 
+.detail-panel .question-stem-preview {
+  margin-top: 16px;
+}
+
 .detail-panel .button-row {
   margin-top: 20px;
 }
@@ -826,6 +839,10 @@ code {
 
 .question-progress strong {
   color: var(--primary-strong);
+}
+
+.practice-main .practice-stem {
+  margin-top: 16px;
 }
 
 .practice-mode-heading {
@@ -1393,9 +1410,26 @@ textarea:focus {
 .option-entry {
   min-height: 46px;
   display: grid;
-  grid-template-columns: 28px 32px minmax(0, 1fr);
+  grid-template-columns: 28px 32px minmax(0, 1fr) 42px;
   align-items: center;
   gap: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 4px;
+  position: relative;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.option-entry.is-correct-selected {
+  border-color: #9cc7b3;
+  background: #f0fbf5;
+}
+
+.option-entry.is-correct-pulse {
+  animation: correct-option-pulse 0.9s ease;
 }
 
 .option-entry > span {
@@ -1407,6 +1441,25 @@ textarea:focus {
   width: 18px;
   height: 18px;
   accent-color: var(--primary);
+}
+
+.option-delete-button {
+  color: var(--danger);
+}
+
+.add-option-button {
+  width: fit-content;
+  justify-self: end;
+}
+
+@keyframes correct-option-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(32, 136, 90, 0.28);
+  }
+
+  100% {
+    box-shadow: 0 0 0 10px rgba(32, 136, 90, 0);
+  }
 }
 
 .editor-action-strip {
@@ -1462,13 +1515,34 @@ textarea:focus {
   font-weight: 850;
 }
 
-.memo-box {
+.memo-box,
+.preview-explanation {
   margin: 16px 0 0;
   padding: 14px;
   border-radius: var(--radius);
   background: #fff4e4;
   color: #76510f;
   line-height: 1.6;
+}
+
+.preview-explanation h3 {
+  margin: 0 0 10px;
+  color: #76510f;
+  font-size: 16px;
+}
+
+.preview-explanation .markdown-preview-body p {
+  margin: 0;
+  color: #76510f;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.empty-preview-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .stats-kpis {
@@ -1870,6 +1944,20 @@ textarea:focus {
   font-weight: 850;
   line-height: 1.35;
   pointer-events: auto;
+}
+
+.status-toast.success {
+  border-color: #a9d8bd;
+  background: #f0fbf5;
+  box-shadow: 0 16px 34px rgba(28, 110, 73, 0.14);
+  color: var(--success);
+}
+
+.status-toast.error {
+  border-color: #f0b7b7;
+  background: #fffafa;
+  box-shadow: 0 16px 34px rgba(132, 31, 31, 0.16);
+  color: var(--danger);
 }
 
 .status-toast svg {

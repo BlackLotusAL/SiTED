@@ -39,7 +39,7 @@ export function QuestionPreview({ detail, loading = false }: QuestionPreviewProp
         <span>{getLevelLabel(detail.source.level as Level)}</span>
         <span>{getQuestionTypeLabel(detail.source.type as QuestionType)}</span>
       </div>
-      <div className="markdown-preview-body" dangerouslySetInnerHTML={{ __html: detail.stemHtml }} />
+      <div className="markdown-preview-body question-stem-preview" dangerouslySetInnerHTML={{ __html: detail.stemHtml }} />
       {detail.memo ? <p>{detail.memo}</p> : null}
       <div className="preview-options">
         {detail.options.map((option) => (
