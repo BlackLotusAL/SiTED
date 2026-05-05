@@ -3,7 +3,6 @@ import {
   BookOpenCheck,
   ClipboardList,
   FileQuestion,
-  GraduationCap,
   Home,
   Library,
   Settings,
@@ -54,18 +53,8 @@ export const APP_ROUTES: AppRouteConfig[] = [
     label: "练习",
     navLabel: "练习",
     eyebrow: "练习",
-    title: "单题练习",
+    title: "筛选练习",
     placeholder: "Practice flow placeholder for answer submission and immediate feedback.",
-    section: "learner",
-    icon: GraduationCap
-  },
-  {
-    path: "/recite",
-    label: "背诵",
-    navLabel: "背诵",
-    eyebrow: "背诵",
-    title: "快速背诵",
-    placeholder: "Recite mode placeholder for fast question review.",
     section: "learner",
     icon: BookOpenCheck
   },

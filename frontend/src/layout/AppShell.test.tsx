@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { apiClient } from "../api/client";
 import type { Identity } from "../api/types";
 import App from "../App";
 import { AppShell } from "./AppShell";
@@ -30,6 +31,7 @@ const contentAdminIdentity: Identity = {
 describe("AppShell", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   it("renders learner shell with route title, top actions, and no admin nav", async () => {
@@ -44,6 +46,14 @@ describe("AppShell", () => {
     expect(within(identityCard).getByText("10.0.0.5")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "题目管理" })).not.toBeInTheDocument();
     expect(screen.queryByText("管理")).not.toBeInTheDocument();
+  });
+
+  it("keeps practice as the single learner nav entry for practice and recite modes", async () => {
+    renderShell("/", learnerIdentity);
+
+    expect(await screen.findByRole("link", { name: "练习" })).toHaveAttribute("href", "/practice");
+    expect(screen.queryByRole("link", { name: "背题" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "背诵" })).not.toBeInTheDocument();
   });
 
   it("shows admin navigation for system administrators", async () => {
@@ -91,6 +101,7 @@ describe("AppShell", () => {
     expect(screen.getByRole("heading", { name: "实时预览" })).toBeInTheDocument();
     questions.unmount();
 
+    mockAdminStatsApi();
     const stats = renderApp("/admin/stats", Promise.resolve(contentAdminIdentity));
 
     expect(await screen.findByRole("heading", { name: "题库统计" })).toBeInTheDocument();
@@ -128,4 +139,59 @@ function renderApp(path: string, identity: Promise<Identity>) {
       <App loadIdentity={() => identity.catch((error: unknown) => Promise.reject(error))} />
     </MemoryRouter>
   );
+}
+
+function mockAdminStatsApi() {
+  vi.spyOn(apiClient, "get").mockImplementation(((path: string) => {
+    if (path !== "/admin/stats") {
+      return Promise.reject(new Error(`Unexpected GET ${path}`));
+    }
+
+    return Promise.resolve({
+      questions: {
+        total: 46,
+        published: 44,
+        bySubject: [
+          { subject: "programming", count: 21 },
+          { subject: "security_privacy", count: 14 },
+          { subject: "refactoring", count: 11 }
+        ]
+      },
+      lowCorrectRateQuestions: [],
+      today: {
+        visitors: 4,
+        practiceQuestions: 9,
+        exams: 2
+      },
+      trends: {
+        visitors: [
+          { date: "2026-04-29", count: 1 },
+          { date: "2026-04-30", count: 2 },
+          { date: "2026-05-01", count: 2 },
+          { date: "2026-05-02", count: 3 },
+          { date: "2026-05-03", count: 3 },
+          { date: "2026-05-04", count: 3 },
+          { date: "2026-05-05", count: 4 }
+        ],
+        practiceQuestions: [
+          { date: "2026-04-29", count: 2 },
+          { date: "2026-04-30", count: 3 },
+          { date: "2026-05-01", count: 4 },
+          { date: "2026-05-02", count: 5 },
+          { date: "2026-05-03", count: 6 },
+          { date: "2026-05-04", count: 7 },
+          { date: "2026-05-05", count: 9 }
+        ],
+        exams: [
+          { date: "2026-04-29", count: 0 },
+          { date: "2026-04-30", count: 1 },
+          { date: "2026-05-01", count: 0 },
+          { date: "2026-05-02", count: 1 },
+          { date: "2026-05-03", count: 1 },
+          { date: "2026-05-04", count: 1 },
+          { date: "2026-05-05", count: 2 }
+        ]
+      }
+    });
+  }) as typeof apiClient.get);
 }

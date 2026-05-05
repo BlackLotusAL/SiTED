@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const frontendDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(frontendDir, "..");
 const npmRun = process.platform === "win32" ? "npm.cmd run" : "npm run";
+const reuseExistingServer = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -29,14 +30,14 @@ export default defineConfig({
         PORT: "3000"
       },
       url: "http://127.0.0.1:3000/api/me",
-      reuseExistingServer: false,
+      reuseExistingServer,
       timeout: 120000
     },
     {
       command: `${npmRun} dev:frontend -- --host 127.0.0.1 --port 5174`,
       cwd: repoRoot,
       url: "http://127.0.0.1:5174",
-      reuseExistingServer: false,
+      reuseExistingServer,
       timeout: 120000
     }
   ],

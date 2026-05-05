@@ -36,7 +36,8 @@ describe("QuestionsService", () => {
             { stemMd: { contains: "ConcurrentHashMap", mode: "insensitive" } },
             { explanationMd: { contains: "ConcurrentHashMap", mode: "insensitive" } },
             { memo: { contains: "ConcurrentHashMap", mode: "insensitive" } },
-            { sourceCode: { contains: "ConcurrentHashMap", mode: "insensitive" } }
+            { sourceCode: { contains: "ConcurrentHashMap", mode: "insensitive" } },
+            { tags: { has: "ConcurrentHashMap" } }
           ]
         }),
         skip: 10,
@@ -77,9 +78,36 @@ describe("QuestionsService", () => {
       tags: ["collections"],
       stats: { totalAttempts: 4, correctAttempts: 2, correctRate: 50 }
     });
+    expect(detail).not.toHaveProperty("correctAnswers");
 
     prisma.question.findFirst.mockResolvedValueOnce(null);
     await expect(service.getPublicDetail("draft-id")).rejects.toThrow(NotFoundException);
+  });
+
+  it("returns recite detail with correct answers only for published questions", async () => {
+    const prisma = {
+      question: {
+        findFirst: jest.fn().mockResolvedValue(questionRecord({ status: "published" }))
+      }
+    };
+    const service = new QuestionsService(prisma as never, markdownStub());
+
+    const detail = await service.getReciteDetail("q1");
+
+    expect(prisma.question.findFirst).toHaveBeenCalledWith({ where: { id: "q1", status: "published" } });
+    expect(detail).toMatchObject({
+      id: "q1",
+      stemHtml: "<p>safe</p>",
+      explanationHtml: "<p>safe</p>",
+      correctAnswers: ["B"],
+      options: [
+        { key: "A", text: "ArrayList" },
+        { key: "B", text: "ConcurrentHashMap" }
+      ]
+    });
+
+    prisma.question.findFirst.mockResolvedValueOnce(null);
+    await expect(service.getReciteDetail("draft-id")).rejects.toThrow(NotFoundException);
   });
 
   it("creates admin drafts with normalized answers and returns raw markdown plus preview for admin detail", async () => {

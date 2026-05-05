@@ -1,5 +1,8 @@
 import { Bookmark } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { apiClient } from "../api/client";
+import type { QuestionDetail, QuestionListItem, QuestionListResponse } from "../api/types";
 import { QuestionPreview } from "../components/QuestionPreview";
 import {
   getLanguageLabel,
@@ -16,92 +19,145 @@ import {
   type Subject
 } from "../domain/labels";
 
-const QUESTIONS: Array<{
-  id: string;
-  type: QuestionType;
+const PAGE_SIZE = 100;
+
+interface QuestionFilters {
   subject: Subject;
   language: Language;
   level: Level;
-  tags: string[];
-  title: string;
-  summary: string;
-  accuracy: string;
-}> = [
-  {
-    id: "q-1",
-    type: "single",
-    subject: "programming",
-    language: "java",
-    level: "working",
-    tags: ["集合", "线程安全"],
-    title: "下面哪个集合适合在并发读写场景下作为线程安全 Map 使用？",
-    summary: "考察 Java 集合框架中的并发容器选择。",
-    accuracy: "74%"
-  },
-  {
-    id: "q-2",
-    type: "multiple",
-    subject: "programming",
-    language: "java",
-    level: "working",
-    tags: ["异常处理"],
-    title: "关于 checked exception 和 unchecked exception，下列说法正确的是？",
-    summary: "考察异常分类、编译期约束和 API 设计边界。",
-    accuracy: "61%"
-  },
-  {
-    id: "q-3",
-    type: "judgment",
-    subject: "security_privacy",
-    language: "python",
-    level: "professional",
-    tags: ["内存模型"],
-    title: "volatile 能保证复合操作的原子性。",
-    summary: "用于辨析可见性、有序性和原子性的差异。",
-    accuracy: "58%"
-  }
-];
+  type: QuestionType;
+  keyword: string;
+}
+
+const DEFAULT_FILTERS: QuestionFilters = {
+  subject: "programming",
+  language: "java",
+  level: "working",
+  type: "single",
+  keyword: ""
+};
 
 export function QuestionsPage() {
+  const [filters, setFilters] = useState<QuestionFilters>(DEFAULT_FILTERS);
+  const [questions, setQuestions] = useState<QuestionListItem[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<QuestionDetail | null>(null);
+  const [listStatus, setListStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const practiceHref = useMemo(() => `/practice?${filtersToSearchParams(filters).toString()}`, [filters]);
+
+  useEffect(() => {
+    let isMounted = true;
+    setListStatus("loading");
+    setSelectedId(null);
+    setDetail(null);
+    setDetailStatus("idle");
+
+    fetchAllQuestions(filters)
+      .then((items) => {
+        if (!isMounted) {
+          return;
+        }
+        setQuestions(items);
+        setSelectedId(items[0]?.id ?? null);
+        setListStatus("ready");
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setQuestions([]);
+        setSelectedId(null);
+        setListStatus("error");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [filters]);
+
+  useEffect(() => {
+    if (selectedId === null) {
+      setDetail(null);
+      setDetailStatus("idle");
+      return;
+    }
+
+    let isMounted = true;
+    setDetailStatus("loading");
+    apiClient
+      .get<QuestionDetail>(`/questions/${selectedId}`)
+      .then((payload) => {
+        if (!isMounted) {
+          return;
+        }
+        setDetail(payload ?? null);
+        setDetailStatus("ready");
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setDetail(null);
+        setDetailStatus("error");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedId]);
+
   return (
     <>
       <section className="panel">
         <div className="panel-heading compact">
           <h2>按题源组合快速筛选</h2>
-          <Link className="primary-button" to="/practice">
+          <Link className="primary-button" to={practiceHref}>
             按当前筛选练习
           </Link>
         </div>
         <div className="filter-bar">
-          <FilterSelect label="科目" values={SUBJECTS} formatter={(value) => getSubjectLabel(value)} />
-          <FilterSelect label="语言" values={LANGUAGES} formatter={(value) => getLanguageLabel(value)} />
-          <FilterSelect label="级别" values={LEVELS} formatter={(value) => getLevelLabel(value)} />
-          <FilterSelect label="题型" values={QUESTION_TYPES} formatter={(value) => getQuestionTypeLabel(value)} />
+          <FilterSelect label="科目" value={filters.subject} values={SUBJECTS} formatter={(value) => getSubjectLabel(value)} onChange={(subject) => setFilters((current) => ({ ...current, subject }))} />
+          <FilterSelect label="语言" value={filters.language} values={LANGUAGES} formatter={(value) => getLanguageLabel(value)} onChange={(language) => setFilters((current) => ({ ...current, language }))} />
+          <FilterSelect label="级别" value={filters.level} values={LEVELS} formatter={(value) => getLevelLabel(value)} onChange={(level) => setFilters((current) => ({ ...current, level }))} />
+          <FilterSelect label="题型" value={filters.type} values={QUESTION_TYPES} formatter={(value) => getQuestionTypeLabel(value)} onChange={(type) => setFilters((current) => ({ ...current, type }))} />
           <label className="search-field">
             关键词
-            <input type="search" defaultValue="线程安全" />
+            <input
+              type="search"
+              value={filters.keyword}
+              onChange={(event) => setFilters((current) => ({ ...current, keyword: event.target.value }))}
+              placeholder="题干、解析、编号或标签"
+            />
           </label>
         </div>
       </section>
 
       <div className="question-layout">
         <section className="question-list" aria-label="题目列表">
-          {QUESTIONS.map((question, index) => (
-            <article className={index === 0 ? "question-card selected" : "question-card"} key={question.id}>
+          {listStatus === "loading" ? <div className="panel">正在加载真实题目...</div> : null}
+          {listStatus === "error" ? <div className="panel" role="alert">题目加载失败，请稍后重试。</div> : null}
+          {listStatus === "ready" && questions.length === 0 ? <div className="panel">当前筛选条件下暂无已发布题目。</div> : null}
+          {questions.map((question) => (
+            <article
+              className={question.id === selectedId ? "question-card selected" : "question-card"}
+              onClick={() => setSelectedId(question.id)}
+              key={question.id}
+            >
               <div className="question-meta">
-                <span>{getSubjectLabel(question.subject, "short")}</span>
-                <span>{getLanguageLabel(question.language)}</span>
-                <span>{getLevelLabel(question.level)}</span>
-                <span>{getQuestionTypeLabel(question.type)}</span>
+                <span>{getSubjectLabel(question.subject as Subject, "short")}</span>
+                {question.language ? <span>{getLanguageLabel(question.language as Language)}</span> : null}
+                <span>{getLevelLabel(question.level as Level)}</span>
+                <span>{getQuestionTypeLabel(question.type as QuestionType)}</span>
                 {question.tags.map((tag) => (
                   <span key={tag}>{tag}</span>
                 ))}
               </div>
-              <h3>{question.title}</h3>
-              <p>{question.summary}</p>
+              <h3>{plainText(question.stemMd)}</h3>
+              {question.memo ? <p>{question.memo}</p> : null}
               <div className="question-footer">
-                <span>正确率 {question.accuracy}</span>
-                <button className="icon-button small" type="button" aria-label={`收藏：${question.title}`}>
+                <span>正确率 {question.correctRate}%</span>
+                <button className="icon-button small" type="button" aria-label={`收藏：${plainText(question.stemMd)}`} onClick={(event) => event.stopPropagation()}>
                   <Bookmark aria-hidden="true" size={16} />
                 </button>
               </div>
@@ -109,18 +165,7 @@ export function QuestionsPage() {
           ))}
         </section>
 
-        <QuestionPreview
-          title="ConcurrentHashMap 的适用场景"
-          code="Map<String, Integer> counts = new ConcurrentHashMap<>();"
-          description="这道题命中“科目二 / Java / 工作级”组合，适合作为集合和并发基础的练习题。"
-          options={[
-            { key: "A", label: "ArrayList" },
-            { key: "B", label: "HashMap" },
-            { key: "C", label: "ConcurrentHashMap", correct: true },
-            { key: "D", label: "LinkedList" }
-          ]}
-          tags={["集合", "线程安全", "并发容器"]}
-        />
+        <QuestionPreview detail={detailStatus === "error" ? null : detail} loading={detailStatus === "loading"} />
       </div>
     </>
   );
@@ -128,23 +173,69 @@ export function QuestionsPage() {
 
 function FilterSelect<TValue extends Subject | Language | Level | QuestionType>({
   label,
+  value,
   values,
-  formatter
+  formatter,
+  onChange
 }: {
   label: string;
+  value: TValue;
   values: readonly TValue[];
   formatter: (value: TValue) => string;
+  onChange: (value: TValue) => void;
 }) {
   return (
     <label>
       {label}
-      <select defaultValue={values[0]}>
-        {values.map((value) => (
-          <option value={value} key={value}>
-            {formatter(value)}
+      <select value={value} onChange={(event) => onChange(event.target.value as TValue)}>
+        {values.map((item) => (
+          <option value={item} key={item}>
+            {formatter(item)}
           </option>
         ))}
       </select>
     </label>
   );
+}
+
+async function fetchAllQuestions(filters: QuestionFilters): Promise<QuestionListItem[]> {
+  const firstPage = await fetchQuestionPage(filters, 1);
+  const total = firstPage.total;
+  const pageCount = Math.ceil(total / PAGE_SIZE);
+
+  if (pageCount <= 1) {
+    return firstPage.items;
+  }
+
+  const rest = await Promise.all(Array.from({ length: pageCount - 1 }, (_value, index) => fetchQuestionPage(filters, index + 2)));
+  return [firstPage, ...rest].flatMap((page) => page.items);
+}
+
+async function fetchQuestionPage(filters: QuestionFilters, page: number): Promise<QuestionListResponse> {
+  const payload = await apiClient.get<QuestionListResponse>(`/questions?${filtersToSearchParams(filters, page).toString()}`);
+  return payload ?? { items: [], page, pageSize: PAGE_SIZE, total: 0 };
+}
+
+function filtersToSearchParams(filters: QuestionFilters, page = 1): URLSearchParams {
+  const params = new URLSearchParams({
+    subject: filters.subject,
+    language: filters.language,
+    level: filters.level,
+    type: filters.type,
+    page: String(page),
+    pageSize: String(PAGE_SIZE)
+  });
+  const keyword = filters.keyword.trim();
+  if (keyword.length > 0) {
+    params.set("keyword", keyword);
+  }
+  return params;
+}
+
+function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`~\-[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }

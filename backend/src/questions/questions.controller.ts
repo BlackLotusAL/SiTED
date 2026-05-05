@@ -10,6 +10,11 @@ export class QuestionsController {
     return this.questionsService.listPublic(query);
   }
 
+  @Get(":id/recite")
+  reciteDetail(@Param("id") id: string) {
+    return this.questionsService.getReciteDetail(id);
+  }
+
   @Get(":id")
   detail(@Param("id") id: string) {
     return this.questionsService.getPublicDetail(id);

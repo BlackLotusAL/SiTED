@@ -828,6 +828,25 @@ code {
   color: var(--primary-strong);
 }
 
+.practice-mode-heading {
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.mode-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 780;
+  line-height: 1.45;
+}
+
+.mode-hint strong {
+  margin-right: 8px;
+  color: var(--ink);
+  font-weight: 900;
+}
+
 .options {
   display: grid;
   gap: 11px;
@@ -868,7 +887,7 @@ code {
 
 .option.is-correct {
   border-color: var(--success);
-  background: #f1f3ff;
+  background: #ecfdf3;
 }
 
 .option.is-wrong {
@@ -884,6 +903,34 @@ code {
   margin-top: 14px;
 }
 
+.practice-answer-actions {
+  margin-top: 18px;
+}
+
+.question-nav-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.question-nav-button {
+  width: 42px;
+  min-width: 42px;
+  padding: 0;
+  color: var(--primary-strong);
+}
+
+.submit-answer-button {
+  min-width: 116px;
+}
+
+.practice-resubmit-note {
+  margin: 12px 0 0;
+  color: var(--primary-strong);
+  font-size: 14px;
+  font-weight: 850;
+}
+
 .answer-panel {
   margin-top: 16px;
   border: 1px solid #c6cef8;
@@ -892,12 +939,18 @@ code {
   padding: 14px;
 }
 
-.answer-panel strong,
-.submit-confirmation strong {
-  color: var(--success);
+.answer-panel strong {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+}
+
+.answer-panel.result-correct strong {
+  color: var(--success);
+}
+
+.answer-panel.result-wrong strong {
+  color: var(--danger);
 }
 
 .side-stack {
@@ -931,16 +984,20 @@ code {
 }
 
 .question-jump {
-  margin-top: 14px;
+  margin-top: 10px;
   display: grid;
   gap: 8px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 850;
 }
 
 .question-jump select {
   width: 100%;
+}
+
+.quick-jump-panel {
+  min-height: 118px;
 }
 
 .status-list span {
@@ -952,33 +1009,43 @@ code {
 }
 
 .mode-explainer {
-  gap: 18px;
+  gap: 14px;
 }
 
-.mode-explainer span {
-  align-items: flex-start;
-  gap: 10px;
-  line-height: 1.6;
+.mode-explainer > span {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  min-width: 0;
+  line-height: 1.35;
 }
 
 .mode-explainer b {
   flex: 0 0 auto;
-  margin-top: 7px;
+  margin-top: 0;
 }
 
-.mode-explainer strong {
-  display: block;
+.mode-explainer .mode-copy {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+  white-space: nowrap;
+}
+
+.mode-explainer .mode-copy strong {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 900;
 }
 
-.mode-explainer small {
-  display: block;
-  margin-top: 4px;
+.mode-explainer .mode-copy small {
+  min-width: 0;
   color: var(--muted);
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.35;
 }
 
 .segmented {
@@ -1115,6 +1182,20 @@ code {
   border-color: var(--amber);
 }
 
+.sheet-grid .correct,
+.legend .correct {
+  color: #ffffff;
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.sheet-grid .wrong,
+.legend .wrong {
+  color: #ffffff;
+  background: var(--coral);
+  border-color: var(--coral);
+}
+
 .legend {
   margin: 14px 0;
   color: var(--muted);
@@ -1127,8 +1208,54 @@ code {
   align-items: center;
 }
 
-.answer-sheet .danger-button {
+.answer-sheet > .danger-button {
   width: 100%;
+}
+
+.answer-sheet > .restart-exam-button {
+  width: 100%;
+}
+
+.exam-result-summary {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcff;
+}
+
+.exam-result-summary h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.exam-result-summary strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.exam-result-summary strong.passed {
+  color: var(--success);
+}
+
+.exam-result-summary strong.failed {
+  color: var(--danger);
+}
+
+.exam-result-summary p {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.exam-result-summary div {
+  display: flex;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .autosave-state {
@@ -1151,6 +1278,25 @@ code {
   margin: 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.submit-confirmation strong {
+  color: var(--danger);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.submit-confirmation-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.submit-confirmation-actions .secondary-button,
+.submit-confirmation-actions .danger-button {
+  width: 100%;
+  padding: 0 10px;
 }
 
 table {

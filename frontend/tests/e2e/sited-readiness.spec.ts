@@ -15,6 +15,11 @@ interface QuestionListResponse {
 
 interface QuestionDetailResponse {
   stemHtml: string;
+  correctAnswers?: string[];
+}
+
+interface ReciteQuestionDetailResponse extends QuestionDetailResponse {
+  correctAnswers: string[];
 }
 
 interface AdminStatsResponse {
@@ -47,6 +52,12 @@ test.describe("SiTED local readiness", () => {
     const detail = (await detailResponse.json()) as QuestionDetailResponse;
     expect(detail.stemHtml).toContain("<pre");
     expect(detail.stemHtml).toContain("ConcurrentHashMap");
+    expect(detail.correctAnswers).toBeUndefined();
+
+    const reciteResponse = await request.get(`${API_BASE_URL}/api/questions/${single.items[0].id}/recite`);
+    expect(reciteResponse.ok()).toBe(true);
+    const reciteDetail = (await reciteResponse.json()) as ReciteQuestionDetailResponse;
+    expect(reciteDetail.correctAnswers.length).toBeGreaterThan(0);
 
     const statsResponse = await request.get(`${API_BASE_URL}/api/admin/stats`, {
       headers: { "x-forwarded-for": "10.42.18.36" }
@@ -83,19 +94,69 @@ test.describe("SiTED local readiness", () => {
     await expect(page.locator(".question-card.selected")).toBeVisible();
     await expect(page.locator(".question-preview-card")).toContainText("ConcurrentHashMap");
     await expect(page.locator(".question-preview-card pre code")).toContainText("ConcurrentHashMap");
-    await expect(page.locator(".question-preview-card .preview-option.correct")).toContainText("ConcurrentHashMap");
+    await expect(page.locator(".question-preview-card .preview-option.correct")).toHaveCount(0);
   });
 
-  test("practice submit updates feedback", async ({ page }) => {
+  test("practice page opens from filters and switches practice and recite modes", async ({ page }) => {
     await mockIdentity(page, "learner");
-    await page.goto("/practice");
+    await page.goto("/questions");
+
+    await page.locator(".filter-bar select").nth(1).selectOption("java");
+    await page.locator(".filter-bar select").nth(3).selectOption("single");
+    await page.locator(".search-field input").fill("ConcurrentHashMap");
+    await page.getByRole("link", { name: "按当前筛选练习" }).click();
+
+    await expect(page).toHaveURL(/\/practice\?.*keyword=ConcurrentHashMap/);
+    await expect(page.getByRole("button", { name: "练习" })).toHaveClass(/active/);
 
     await page.locator(".options .option").filter({ hasText: "ArrayList" }).click();
+    const submitResponsePromise = page.waitForResponse((response) => response.url().includes("/api/practice/submit"));
     await page.locator(".practice-actions .primary-button").click();
+    const submitResponse = await submitResponsePromise;
+    expect(submitResponse.ok(), await submitResponse.text()).toBe(true);
 
     await expect(page.locator(".answer-panel[role='status']")).toBeVisible();
     await expect(page.locator(".option.is-wrong")).toContainText("ArrayList");
     await expect(page.locator(".option.is-correct")).toContainText("ConcurrentHashMap");
+    await expect(page.locator(".option.is-correct")).toHaveCSS("background-color", "rgb(236, 253, 243)");
+    await expect(page.locator(".answer-panel[role='status'] strong")).toHaveCSS("color", "rgb(189, 63, 59)");
+
+    await page.locator(".options .option").filter({ hasText: "ConcurrentHashMap" }).click();
+    await expect(page.locator(".practice-resubmit-note")).toContainText("已修改答案，可重新提交");
+    await page.locator(".options .option").filter({ hasText: "ArrayList" }).click();
+    await expect(page.locator(".answer-panel[role='status']")).toHaveCount(0);
+    await expect(page.locator(".option.is-correct")).toHaveCount(0);
+    await expect(page.locator(".option.is-wrong")).toHaveCount(0);
+    await expect(page.locator(".practice-resubmit-note")).toContainText("已修改答案，可重新提交");
+    await page.locator(".options .option").filter({ hasText: "ConcurrentHashMap" }).click();
+    const retrySubmitResponsePromise = page.waitForResponse((response) => response.url().includes("/api/practice/submit"));
+    await page.locator(".practice-actions .primary-button").click();
+    const retrySubmitResponse = await retrySubmitResponsePromise;
+    expect(retrySubmitResponse.ok(), await retrySubmitResponse.text()).toBe(true);
+    await expect(page.locator(".answer-panel[role='status']")).toContainText("回答正确");
+
+    await page.getByRole("button", { name: "下一题" }).click();
+    await expect(page.locator(".question-progress strong")).toContainText(/第 2 \/ \d+ 题/);
+    await page.getByRole("button", { name: "上一题" }).click();
+    await expect(page.locator(".question-progress strong")).toContainText(/第 1 \/ \d+ 题/);
+    await expect(page.locator(".option.is-correct")).toContainText("ConcurrentHashMap");
+
+    await page.getByRole("button", { name: "背诵" }).click();
+    await expect(page.getByRole("button", { name: "背诵" })).toHaveClass(/active/);
+    await expect(page.locator(".answer-panel[role='status']")).toContainText("答案与解析");
+    await expect(page.locator(".option.is-correct")).toContainText("ConcurrentHashMap");
+
+    await page.getByRole("button", { name: "下一题" }).click();
+    await expect(page.locator(".question-progress strong")).toContainText(/第 2 \/ \d+ 题/);
+
+    await page.getByRole("button", { name: "上一题" }).click();
+    await expect(page.locator(".question-progress strong")).toContainText(/第 1 \/ \d+ 题/);
+
+    await expect(page.getByRole("heading", { name: "快速跳题" })).toBeVisible();
+    await page.getByLabel("跳转题号").selectOption("2");
+    await expect(page.locator(".question-progress strong")).toContainText(/第 2 \/ \d+ 题/);
+    await expect(page.locator(".practice-main .mode-hint")).toContainText("直接显示答案和解析，不写练习记录");
+    await expect(page.locator(".side-stack .mode-explainer")).toHaveCount(0);
   });
 
   test("review tabs switch", async ({ page }) => {
@@ -114,22 +175,75 @@ test.describe("SiTED local readiness", () => {
     await expect(page.locator(".table-head.records")).toBeVisible();
   });
 
-  test("exam create-save-submit works", async ({ page }) => {
-    await mockIdentity(page, "learner");
+  test("exam starts only after user action, then save-submit works", async ({ page }) => {
+    await mockIdentity(page, "learner", "10.42.11.11");
     await page.goto("/exam");
 
-    await page.locator(".options.multi .option").nth(1).click();
-    await expect(page.locator(".options.multi .option").nth(1)).toHaveClass(/selected/);
+    await expect(page.getByRole("heading", { name: "未启动模拟考" })).toBeVisible();
+    await expect(page.locator(".answer-sheet")).toHaveCount(0);
+    const filterBox = await requiredBox(page.locator(".exam-start-panel .filter-bar"));
+    const actionBox = await requiredBox(page.locator(".exam-start-panel .button-row"));
+    expect(actionBox.y - (filterBox.y + filterBox.height)).toBeGreaterThanOrEqual(16);
 
-    await page.locator(".exam-paper .practice-actions .primary-button").click();
+    const createExamResponsePromise = page.waitForResponse((response) => response.url().includes("/api/exams") && response.request().method() === "POST");
+    await page.getByRole("button", { name: "开始模拟考" }).click();
+    const createExamResponse = await createExamResponsePromise;
+    expect(createExamResponse.ok(), await createExamResponse.text()).toBe(true);
+    await expect(page.locator(".exam-layout")).toBeVisible();
+
+    await page.locator(".options .option").nth(1).click();
+    await expect(page.locator(".options .option").nth(1)).toHaveClass(/selected/);
+
+    await page.getByRole("button", { name: "提交答案" }).click();
     await expect(page.locator(".autosave-state")).toBeVisible();
 
     await page.locator(".answer-sheet > .danger-button").click();
     await expect(page.locator(".submit-confirmation[role='alert']")).toBeVisible();
+    await expect(page.locator(".submit-confirmation[role='alert']")).toContainText(/还有 \d+ 道题未作答/);
+    await expect(page.locator(".submit-confirmation[role='alert'] strong")).toHaveCSS("color", "rgb(189, 63, 59)");
+    const continueBox = await requiredBox(page.getByRole("button", { name: "继续答题" }));
+    const confirmBox = await requiredBox(page.getByRole("button", { name: "确认交卷" }));
+    expect(Math.abs(continueBox.y - confirmBox.y)).toBeLessThanOrEqual(2);
     await page.locator(".submit-confirmation .danger-button").click();
 
     await expect(page.locator(".answer-panel.review-state")).toBeVisible();
-    await expect(page.locator(".answer-sheet > .danger-button")).toBeDisabled();
+    const reviewTitle = page.locator(".answer-panel.review-state strong");
+    await expect(reviewTitle).toContainText(/回答(正确|错误)/);
+    await expect(reviewTitle).not.toContainText("复盘结果");
+    const reviewTitleText = await reviewTitle.textContent();
+    if (reviewTitleText?.includes("错误")) {
+      await expect(reviewTitle).toHaveCSS("color", "rgb(189, 63, 59)");
+    } else {
+      await expect(reviewTitle).toHaveCSS("color", "rgb(32, 136, 90)");
+    }
+    await expect(page.locator(".exam-result-summary")).toContainText("考试结果");
+    await expect(page.locator(".exam-result-summary")).toContainText("正确率");
+    await expect(page.locator(".sheet-grid button.correct, .sheet-grid button.wrong").first()).toBeVisible();
+    await expect(page.locator(".legend")).toContainText("正确");
+    await expect(page.locator(".legend")).toContainText("错误");
+    await expect(page.locator(".legend")).not.toContainText("已答");
+    await expect(page.locator(".legend")).not.toContainText("当前");
+    await expect(page.locator(".legend")).not.toContainText("疑问");
+    await expect(page.getByRole("button", { name: "重新模拟考" })).toBeVisible();
+
+    await page.getByRole("link", { name: "练习", exact: true }).click();
+    await expect(page).toHaveURL(/\/practice/);
+    await page.getByRole("link", { name: "模拟考", exact: true }).click();
+    await expect(page.locator(".answer-panel.review-state")).toBeVisible();
+    await expect(page.locator(".answer-panel.review-state strong")).toContainText(/回答(正确|错误)/);
+    await expect(page.getByRole("button", { name: "重新模拟考" })).toBeVisible();
+
+    await page.getByRole("button", { name: "重新模拟考" }).click();
+    await expect(page.getByRole("heading", { name: "未启动模拟考" })).toBeVisible();
+    await expect(page.locator(".answer-sheet")).toHaveCount(0);
+
+    const restartExamResponsePromise = page.waitForResponse((response) => response.url().includes("/api/exams") && response.request().method() === "POST");
+    await page.getByRole("button", { name: "开始模拟考" }).click();
+    const restartExamResponse = await restartExamResponsePromise;
+    expect(restartExamResponse.ok(), await restartExamResponse.text()).toBe(true);
+    await expect(page.locator(".exam-layout")).toBeVisible();
+    await expect(page.locator(".answer-panel.review-state")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "交卷" })).toBeVisible();
   });
 
   test("admin question editor preview renders highlighted code", async ({ page }) => {
@@ -171,25 +285,36 @@ test.describe("SiTED local readiness", () => {
 
     const table = page.locator(".role-binding-table");
     await expect(table).toBeVisible();
-    await expect(table.locator("thead th")).toHaveCount(5);
+    await expect(table.locator("thead th")).toHaveCount(6);
     await expect(table).toContainText("10.42.18.36");
     await expect(table.locator(".permission-list span").first()).toBeVisible();
-    await expect(table.locator(".permission-list span")).toHaveCount(10);
+    expect(await table.locator(".permission-list span").count()).toBeGreaterThanOrEqual(10);
+    await expect(table).toContainText("系统配置");
+    await expect(table).not.toContainText("配置重载");
   });
 });
 
-async function mockIdentity(page: Page, role: TestRole) {
-  await page.route("**/api/me", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ip: role === "learner" ? "10.42.11.10" : "10.42.18.36",
-        role,
-        roleLabel: role,
-        permissions: []
-      })
-    });
+async function mockIdentity(page: Page, role: TestRole, ipOverride?: string) {
+  const ip = ipOverride ?? (role === "learner" ? "10.42.11.10" : role === "content_admin" ? "10.42.20.17" : "10.42.18.36");
+  await page.route("**/api/**", async (route) => {
+    const headers = { ...route.request().headers(), "x-forwarded-for": ip };
+    const pathname = new URL(route.request().url()).pathname;
+
+    if (pathname === "/api/me") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ip,
+          role,
+          roleLabel: role,
+          permissions: []
+        })
+      });
+      return;
+    }
+
+    await route.continue({ headers });
   });
 }
 

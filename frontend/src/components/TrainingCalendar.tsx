@@ -1,11 +1,12 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 
-interface CalendarMonth {
+export interface CalendarMonth {
   year: number;
   month: number;
   total: number;
-  values: number[];
+  values?: number[];
+  days?: Array<{ day: number; count: number }>;
 }
 
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -31,13 +32,15 @@ const MONTHS: CalendarMonth[] = [
   }
 ];
 
-export function TrainingCalendar() {
-  const [activeMonth, setActiveMonth] = useState(1);
-  const month = MONTHS[activeMonth];
+export function TrainingCalendar({ months = MONTHS, initialMonthIndex }: { months?: CalendarMonth[]; initialMonthIndex?: number } = {}) {
+  const [activeMonth, setActiveMonth] = useState(initialMonthIndex ?? Math.min(1, months.length - 1));
+  const activeMonths = months.length > 0 ? months : MONTHS;
+  const safeActiveMonth = Math.min(activeMonth, activeMonths.length - 1);
+  const month = activeMonths[safeActiveMonth];
   const cells = useMemo(() => buildCalendarCells(month), [month]);
 
   function shiftMonth(delta: number) {
-    setActiveMonth((current) => Math.min(Math.max(current + delta, 0), MONTHS.length - 1));
+    setActiveMonth((current) => Math.min(Math.max(current + delta, 0), activeMonths.length - 1));
   }
 
   return (
@@ -51,7 +54,7 @@ export function TrainingCalendar() {
           className="icon-button small"
           type="button"
           onClick={() => shiftMonth(-1)}
-          disabled={activeMonth === 0}
+          disabled={safeActiveMonth === 0}
           aria-label="上一月"
         >
           <ChevronLeft aria-hidden="true" size={16} />
@@ -61,7 +64,7 @@ export function TrainingCalendar() {
           className="icon-button small"
           type="button"
           onClick={() => shiftMonth(1)}
-          disabled={activeMonth === MONTHS.length - 1}
+          disabled={safeActiveMonth === activeMonths.length - 1}
           aria-label="下一月"
         >
           <ChevronRight aria-hidden="true" size={16} />
@@ -102,6 +105,7 @@ export function TrainingCalendar() {
 function buildCalendarCells(month: CalendarMonth) {
   const days = daysInMonth(month);
   const leadingEmptyCells = (new Date(month.year, month.month - 1, 1).getDay() + 6) % 7;
+  const values = month.values ?? valuesFromDays(month.days ?? []);
   const cells: Array<{ day?: number; intensity?: number }> = [];
 
   for (let index = 0; index < leadingEmptyCells; index += 1) {
@@ -109,7 +113,7 @@ function buildCalendarCells(month: CalendarMonth) {
   }
 
   for (let day = 1; day <= days; day += 1) {
-    cells.push({ day, intensity: month.values[day - 1] ?? 0 });
+    cells.push({ day, intensity: values[day - 1] ?? 0 });
   }
 
   while (cells.length < 42) {
@@ -117,6 +121,15 @@ function buildCalendarCells(month: CalendarMonth) {
   }
 
   return cells.slice(0, 42);
+}
+
+function valuesFromDays(days: Array<{ day: number; count: number }>): number[] {
+  const max = Math.max(1, ...days.map((day) => day.count));
+  const values = Array<number>(31).fill(0);
+  days.forEach((day) => {
+    values[day.day - 1] = day.count === 0 ? 0 : Math.min(3, Math.max(1, Math.ceil((day.count / max) * 3)));
+  });
+  return values;
 }
 
 function daysInMonth(month: CalendarMonth): number {

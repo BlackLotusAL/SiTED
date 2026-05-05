@@ -6,6 +6,8 @@ import { AdminSettingsService } from "./admin/admin-settings.service";
 import { AdminStatsController } from "./admin/admin-stats.controller";
 import { AdminStatsService } from "./admin/admin-stats.service";
 import { AuditService } from "./audit/audit.service";
+import { DashboardController } from "./dashboard/dashboard.controller";
+import { DashboardService } from "./dashboard/dashboard.service";
 import { IdentityMiddleware } from "./identity/identity.middleware";
 import { IdentityModule } from "./identity/identity.module";
 import { ExamsModule } from "./exams/exams.module";
@@ -16,8 +18,8 @@ import { ReviewModule } from "./review/review.module";
 
 @Module({
   imports: [PrismaModule, IdentityModule, QuestionsModule, PracticeModule, ReviewModule, ExamsModule],
-  controllers: [AppController, AdminStatsController, AdminSettingsController],
-  providers: [AppService, AdminStatsService, AdminSettingsService, AuditService]
+  controllers: [AppController, AdminStatsController, AdminSettingsController, DashboardController],
+  providers: [AppService, AdminStatsService, AdminSettingsService, DashboardService, AuditService]
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

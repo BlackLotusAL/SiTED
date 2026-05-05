@@ -33,6 +33,13 @@ async function main() {
 }
 
 async function cleanupSeedData() {
+  const seedVisitorIds = (
+    await prisma.visitor.findMany({
+      where: { ip: { in: Object.values(seedIps) } },
+      select: { id: true }
+    })
+  ).map((visitor) => visitor.id);
+
   await prisma.auditLog.deleteMany({
     where: {
       OR: [
@@ -41,6 +48,14 @@ async function cleanupSeedData() {
       ]
     }
   });
+
+  if (seedVisitorIds.length > 0) {
+    await prisma.practiceAttempt.deleteMany({ where: { visitorId: { in: seedVisitorIds } } });
+    await prisma.mistake.deleteMany({ where: { visitorId: { in: seedVisitorIds } } });
+    await prisma.bookmark.deleteMany({ where: { visitorId: { in: seedVisitorIds } } });
+    await prisma.examAttempt.deleteMany({ where: { visitorId: { in: seedVisitorIds } } });
+  }
+
   await prisma.practiceAttempt.deleteMany({ where: { mode: SEED_PRACTICE_MODE } });
   await prisma.examAttempt.deleteMany({ where: { flaggedQuestionIds: { has: SEED_EXAM_FLAG } } });
 }
