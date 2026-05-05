@@ -27,6 +27,7 @@ describe("TrendChart", () => {
     expect(within(chart).getByText("100")).toBeInTheDocument();
     expect(within(chart).getByText("50")).toBeInTheDocument();
     expect(within(chart).getByText("0")).toBeInTheDocument();
+    expect(within(chart).getAllByTestId("trend-chart-bar-slot")).toHaveLength(data.length);
     expect(within(chart).getAllByTestId("trend-chart-bar")).toHaveLength(data.length);
     expect(within(chart).getAllByTestId("trend-chart-x-label").map((label) => label.textContent)).toEqual(
       data.map((item) => item.label)
@@ -36,8 +37,11 @@ describe("TrendChart", () => {
   it("shows a concrete hover tooltip for a bar", () => {
     render(<TrendChart color="amber" data={data} max={100} title="模拟考" unit="次" />);
 
+    const firstSlot = screen.getAllByTestId("trend-chart-bar-slot")[0];
     fireEvent.mouseEnter(screen.getAllByTestId("trend-chart-bar")[0]);
 
-    expect(screen.getByRole("tooltip")).toHaveTextContent("4/27 模拟考 58 次");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("模拟考 58 次");
+    expect(screen.getByRole("tooltip")).not.toHaveTextContent("4/27");
+    expect(screen.getByRole("tooltip").closest("[data-testid='trend-chart-bar-slot']")).toBe(firstSlot);
   });
 });

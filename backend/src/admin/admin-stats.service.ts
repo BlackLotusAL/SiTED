@@ -88,21 +88,22 @@ export class AdminStatsService {
   private findLowCorrectRateQuestions() {
     return this.prisma.$queryRaw<LowCorrectRateQuestion[]>(Prisma.sql`
       SELECT
-        id,
-        "sourceCode",
-        subject,
-        language,
-        level,
-        type,
-        "stemMd",
-        "totalAttempts",
-        "correctAttempts",
-        "updatedAt"
-      FROM "Question"
-      WHERE "totalAttempts" > 0
-      ORDER BY ("correctAttempts"::double precision / "totalAttempts"::double precision) ASC,
-        "totalAttempts" DESC,
-        "updatedAt" DESC
+        q.id,
+        q."sourceCode",
+        q.subject,
+        q.language,
+        q.level,
+        q.type,
+        q."stemMd",
+        COUNT(pa.id)::int AS "totalAttempts",
+        COUNT(pa.id) FILTER (WHERE pa."isCorrect")::int AS "correctAttempts",
+        MAX(pa."createdAt") AS "updatedAt"
+      FROM "Question" q
+      JOIN "PracticeAttempt" pa ON pa."questionId" = q.id
+      GROUP BY q.id, q."sourceCode", q.subject, q.language, q.level, q.type, q."stemMd"
+      ORDER BY (COUNT(pa.id) FILTER (WHERE pa."isCorrect"))::double precision / COUNT(pa.id)::double precision ASC,
+        COUNT(pa.id) DESC,
+        MAX(pa."createdAt") DESC
       LIMIT 10
     `);
   }
