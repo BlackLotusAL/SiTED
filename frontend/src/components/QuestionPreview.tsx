@@ -1,7 +1,8 @@
-import { Bookmark, BookOpenCheck, Play } from "lucide-react";
+import { BookOpenCheck, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { QuestionDetail } from "../api/types";
 import { getLanguageLabel, getLevelLabel, getQuestionTypeLabel, getSubjectLabel, type Language, type Level, type QuestionType, type Subject } from "../domain/labels";
+import { BookmarkStateIcon } from "./BookmarkStateIcon";
 
 export interface QuestionPreviewProps {
   detail?: QuestionDetail | null;
@@ -77,7 +78,7 @@ export function QuestionPreview({ detail, loading = false, isBookmarked = false,
           disabled={isBookmarking}
           onClick={() => onToggleBookmark?.(detail.id)}
         >
-          <Bookmark aria-hidden="true" size={17} />
+          <BookmarkStateIcon isBookmarked={isBookmarked} size={17} />
         </button>
       </div>
     </aside>
