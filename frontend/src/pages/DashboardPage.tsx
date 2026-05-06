@@ -1,44 +1,23 @@
-import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { DashboardSummary } from "../api/types";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import { TrainingCalendar } from "../components/TrainingCalendar";
 import { getLanguageLabel, getLevelLabel, getSubjectLabel, type Language, type Level, type Subject } from "../domain/labels";
+import { useStaleResource } from "../hooks/useStaleResource";
 
 export function DashboardPage() {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const summaryResource = useStaleResource<DashboardSummary>({
+    key: "/dashboard",
+    load: async () => (await apiClient.get<DashboardSummary>("/dashboard")) ?? emptySummary()
+  });
 
-  useEffect(() => {
-    let isMounted = true;
-    setStatus("loading");
-
-    apiClient
-      .get<DashboardSummary>("/dashboard")
-      .then((payload) => {
-        if (!isMounted) {
-          return;
-        }
-        setSummary(payload ?? emptySummary());
-        setStatus("ready");
-      })
-      .catch(() => {
-        if (!isMounted) {
-          return;
-        }
-        setStatus("error");
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  if (status === "loading") {
-    return <section className="panel">正在加载训练数据...</section>;
+  if (summaryResource.isInitialLoading) {
+    return <LoadingSkeleton variant="dashboard" />;
   }
 
-  if (status === "error") {
+  if (summaryResource.error && summaryResource.data === undefined) {
     return (
       <section className="panel" role="alert">
         首页数据加载失败，请稍后重试。
@@ -46,7 +25,7 @@ export function DashboardPage() {
     );
   }
 
-  const data = summary ?? emptySummary();
+  const data = summaryResource.data ?? emptySummary();
   const latestExamLabel = data.latestExam
     ? `${data.latestExam.scorePercent ?? 0}`
     : "暂无记录";
@@ -56,6 +35,7 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard-grid">
+      {summaryResource.error ? <p className="status-message error">首页数据刷新失败，已保留上次成功数据。</p> : null}
       <section className="overview-panel">
         <div className="overview-copy">
           <p className="hero-label">今日训练</p>
@@ -149,11 +129,11 @@ export function DashboardPage() {
 
 function MetricCard({ title, value, note, className = "" }: { title: string; value: string; note: string; className?: string }) {
   return (
-    <div className={`metric-card ${className}`.trim()}>
+    <motion.div className={`metric-card ${className}`.trim()} whileHover={{ y: -3 }} whileTap={{ scale: 0.99 }}>
       <span>{title}</span>
       <strong>{value}</strong>
       <small>{note}</small>
-    </div>
+    </motion.div>
   );
 }
 

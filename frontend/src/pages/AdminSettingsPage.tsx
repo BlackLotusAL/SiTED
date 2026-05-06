@@ -1,9 +1,12 @@
 import { AlertCircle, Plus, Save, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { motion } from "motion/react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { apiClient } from "../api/client";
 import type { Permission } from "../api/types";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import { RoleBindingTable, summarizePermissionGroups, type RoleBindingRow } from "../components/RoleBindingTable";
 import type { Role } from "../domain/labels";
+import { useStaleResource } from "../hooks/useStaleResource";
 
 type EditableBindingRole = Extract<Role, "learner" | "content_admin">;
 type ClearScope = "activity" | "questions" | "all";
@@ -77,8 +80,6 @@ const CLEAR_SCOPE_OPTIONS: Array<{ value: ClearScope; label: string; description
 ];
 
 export function AdminSettingsPage() {
-  const [roleBindings, setRoleBindings] = useState<RoleBindingRow[]>([]);
-  const [isLoadingBindings, setIsLoadingBindings] = useState(true);
   const [bindingDraft, setBindingDraft] = useState<BindingDraft>(INITIAL_BINDING_DRAFT);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [isSavingBinding, setIsSavingBinding] = useState(false);
@@ -96,6 +97,11 @@ export function AdminSettingsPage() {
 
   const canStartClear = confirmationPhrase === CLEAR_CONFIRMATION_PHRASE;
   const activeErrorMessage = settingsError ?? clearError;
+  const roleBindingsResource = useStaleResource<RoleBindingListResponse>({
+    key: "/admin/settings/ip-role-bindings",
+    load: async () => (await apiClient.get<RoleBindingListResponse>("/admin/settings/ip-role-bindings")) ?? { headers: [], items: [] }
+  });
+  const roleBindings = roleBindingsResource.data?.items ?? [];
   const permissionPreview = useMemo(
     () => summarizePermissionGroups(ROLE_PERMISSION_KEYS[bindingDraft.role]),
     [bindingDraft.role]
@@ -114,24 +120,11 @@ export function AdminSettingsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [activeErrorMessage]);
 
-  const loadRoleBindings = useCallback(async () => {
-    setIsLoadingBindings(true);
-    setSettingsError(null);
-
-    try {
-      const response = await apiClient.get<RoleBindingListResponse>("/admin/settings/ip-role-bindings");
-      setRoleBindings(response?.items ?? []);
-    } catch (error) {
-      setSettingsError(errorMessage(error));
-      setRoleBindings([]);
-    } finally {
-      setIsLoadingBindings(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void loadRoleBindings();
-  }, [loadRoleBindings]);
+    if (roleBindingsResource.error && roleBindingsResource.data === undefined) {
+      setSettingsError(errorMessage(roleBindingsResource.error));
+    }
+  }, [roleBindingsResource.data, roleBindingsResource.error]);
 
   async function handleAddBinding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -148,7 +141,7 @@ export function AdminSettingsPage() {
       setBindingDraft(INITIAL_BINDING_DRAFT);
       setIsAddFormOpen(false);
       setSettingsMessage("固定角色绑定已保存。");
-      await loadRoleBindings();
+      await roleBindingsResource.refresh();
     } catch (error) {
       setSettingsError(errorMessage(error));
     } finally {
@@ -176,7 +169,7 @@ export function AdminSettingsPage() {
       await apiClient.delete(`/admin/settings/ip-role-bindings/${encodeURIComponent(row.ip)}`);
       setPendingDeleteBinding(null);
       setSettingsMessage(`${row.ip} 的固定角色绑定已删除。`);
-      await loadRoleBindings();
+      await roleBindingsResource.refresh();
     } catch (error) {
       setSettingsError(errorMessage(error));
     } finally {
@@ -214,7 +207,7 @@ export function AdminSettingsPage() {
         confirmationPhrase
       });
       setClearMessage(clearSuccessMessage(response));
-      await loadRoleBindings();
+      await roleBindingsResource.refresh();
     } catch (error) {
       setClearError(errorMessage(error));
     } finally {
@@ -294,8 +287,8 @@ export function AdminSettingsPage() {
         ) : null}
 
         {settingsMessage ? <p className="status-message success">{settingsMessage}</p> : null}
-        {isLoadingBindings ? (
-          <p className="loading-note">正在加载固定角色绑定...</p>
+        {roleBindingsResource.isInitialLoading ? (
+          <LoadingSkeleton variant="role-bindings" />
         ) : (
           <RoleBindingTable deletingIp={deletingIp} onDelete={handleDeleteBinding} rows={roleBindings} />
         )}
@@ -361,13 +354,22 @@ export function AdminSettingsPage() {
       </section>
 
       {pendingDeleteBinding ? (
-        <div className="dialog-backdrop" role="presentation">
-          <section
+        <motion.div
+          className="dialog-backdrop"
+          role="presentation"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.16 }}
+        >
+          <motion.section
             aria-describedby="delete-binding-description"
             aria-labelledby="delete-binding-title"
             aria-modal="true"
             className="confirm-dialog"
             role="dialog"
+            initial={{ opacity: 0, y: 18, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
           >
             <div className="confirm-dialog-icon">
               <Trash2 aria-hidden="true" size={22} />
@@ -392,8 +394,8 @@ export function AdminSettingsPage() {
                 {deletingIp === pendingDeleteBinding.ip ? "删除中" : "确认删除"}
               </button>
             </div>
-          </section>
-        </div>
+          </motion.section>
+        </motion.div>
       ) : null}
     </div>
   );
@@ -402,10 +404,16 @@ export function AdminSettingsPage() {
 function StatusToast({ message }: { message: string }) {
   return (
     <div className="toast-region">
-      <div className="status-toast error" role="alert">
+      <motion.div
+        className="status-toast error"
+        role="alert"
+        initial={{ opacity: 0, y: -10, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+      >
         <AlertCircle aria-hidden="true" size={17} />
         <span>{message}</span>
-      </div>
+      </motion.div>
     </div>
   );
 }

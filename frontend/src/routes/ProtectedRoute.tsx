@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { useOutletContext } from "react-router-dom";
 import type { Identity } from "../api/types";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import { PlaceholderPage } from "../components/PlaceholderPage";
 import { canAccessRoute, type AppRouteConfig } from "./config";
 
@@ -18,11 +19,7 @@ export function ProtectedRoute({ route, children }: ProtectedRouteProps) {
   const { identity, identityStatus } = useOutletContext<AppShellOutletContext>();
 
   if (identityStatus === "loading") {
-    return (
-      <PlaceholderPage eyebrow="权限" title="正在加载身份...">
-        正在确认当前身份，管理页面将在身份加载完成后显示。
-      </PlaceholderPage>
-    );
+    return <LoadingSkeleton variant="route" />;
   }
 
   if (identityStatus === "error") {

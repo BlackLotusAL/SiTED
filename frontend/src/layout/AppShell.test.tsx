@@ -66,6 +66,29 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "系统设置" })).toHaveAttribute("href", "/admin/settings");
   });
 
+  it("keeps the page stage mounted when navigating between routes", async () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<AppShell loadIdentity={() => Promise.resolve(adminIdentity)} />}>
+            <Route index element={<h2>Home Sentinel</h2>} />
+            <Route path="admin/questions" element={<h2>Admin Sentinel</h2>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("heading", { name: "Home Sentinel" })).toBeInTheDocument();
+    const initialStage = container.querySelector(".page-stage");
+    expect(initialStage).not.toBeNull();
+
+    screen.getByRole("link", { name: "题目管理" }).click();
+
+    expect(await screen.findByRole("heading", { name: "Admin Sentinel" })).toBeInTheDocument();
+    expect(container.querySelector(".page-stage")).toBe(initialStage);
+    expect(container.querySelector(".loading-skeleton")).not.toBeInTheDocument();
+  });
+
   it("falls back to learner identity when /api/me fails", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -83,7 +106,7 @@ describe("AppShell", () => {
     renderApp("/admin/questions", new Promise<Identity>(() => undefined));
 
     expect(screen.getByRole("heading", { name: "题目管理" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "正在加载身份..." })).toBeInTheDocument();
+    expect(screen.getByLabelText("内容加载中")).toBeInTheDocument();
     expect(screen.queryByText("Admin question maintenance placeholder for Task 10.")).not.toBeInTheDocument();
   });
 
