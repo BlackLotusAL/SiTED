@@ -29,8 +29,16 @@ function Invoke-Checked([string]$FilePath, [string[]]$Arguments) {
   }
 }
 
+function Format-CommandOutput([AllowEmptyCollection()][object[]]$Output) {
+  if ($null -eq $Output -or $Output.Count -eq 0) {
+    return ""
+  }
+
+  return (($Output | ForEach-Object { "$_" }) -join "`n").Trim()
+}
+
 function Get-OriginRepoFullName {
-  $remoteUrl = (git remote get-url origin).Trim()
+  $remoteUrl = Format-CommandOutput @(git remote get-url origin)
 
   if ($remoteUrl -match "github\.com[:/](?<owner>[^/]+)/(?<repo>[^/.]+)(\.git)?$") {
     return "$($Matches.owner)/$($Matches.repo)"
@@ -42,7 +50,7 @@ function Get-OriginRepoFullName {
 function Get-DefaultBaseBranch {
   $originHead = ""
   try {
-    $originHead = (git symbolic-ref --short refs/remotes/origin/HEAD 2>$null).Trim()
+    $originHead = Format-CommandOutput @(git symbolic-ref --short refs/remotes/origin/HEAD 2>$null)
   } catch {
     $originHead = ""
   }
@@ -72,8 +80,8 @@ function Get-TokenForGh {
 }
 
 function New-DefaultBodyFile([string]$BranchName, [string]$BaseName) {
-  $commitSubject = (git log -1 --pretty=%s).Trim()
-  $commitSha = (git rev-parse --short HEAD).Trim()
+  $commitSubject = Format-CommandOutput @(git log -1 --pretty=%s)
+  $commitSha = Format-CommandOutput @(git rev-parse --short HEAD)
   $bodyPath = Join-Path ([System.IO.Path]::GetTempPath()) "sited-pr-body-$commitSha.md"
 
   @"
@@ -95,10 +103,10 @@ function New-DefaultBodyFile([string]$BranchName, [string]$BaseName) {
 Require-Command "git"
 Require-Command "gh"
 
-$repoRoot = (git rev-parse --show-toplevel).Trim()
+$repoRoot = Format-CommandOutput @(git rev-parse --show-toplevel)
 Set-Location $repoRoot
 
-$branch = (git branch --show-current).Trim()
+$branch = Format-CommandOutput @(git branch --show-current)
 if ([string]::IsNullOrWhiteSpace($branch)) {
   Fail "Detached HEAD is not supported. Check out a branch first."
 }
@@ -107,7 +115,7 @@ if ($branch -eq "main" -or $branch -eq "master") {
   Fail "Refusing to create a PR from '$branch'. Create or check out a feature branch first."
 }
 
-$dirty = (git status --porcelain).Trim()
+$dirty = Format-CommandOutput @(git status --porcelain)
 if (-not [string]::IsNullOrWhiteSpace($dirty)) {
   Fail "Working tree is not clean. Commit or stash changes before running this script."
 }
@@ -118,7 +126,7 @@ if ([string]::IsNullOrWhiteSpace($BaseBranch)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($Title)) {
-  $Title = (git log -1 --pretty=%s).Trim()
+  $Title = Format-CommandOutput @(git log -1 --pretty=%s)
 }
 
 if ([string]::IsNullOrWhiteSpace($BodyFile)) {
@@ -132,12 +140,12 @@ if (-not (Test-Path -LiteralPath $BodyFile)) {
 $tokenWasPrompted = Get-TokenForGh
 
 try {
-  $viewer = (gh api user --jq ".login").Trim()
+  $viewer = Format-CommandOutput @(gh api user --jq ".login")
   Write-Host "Using GitHub token for: $viewer" -ForegroundColor Green
 
   Invoke-Checked "git" @("push", "-u", "origin", $branch)
 
-  $existingPrNumber = (gh pr list --repo $repoFullName --head $branch --state open --json number --jq ".[0].number" 2>$null).Trim()
+  $existingPrNumber = Format-CommandOutput @(gh pr list --repo $repoFullName --head $branch --state open --json number --jq ".[0].number" 2>$null)
 
   if ([string]::IsNullOrWhiteSpace($existingPrNumber)) {
     $createArgs = @(
@@ -154,12 +162,12 @@ try {
     }
 
     Invoke-Checked "gh" $createArgs
-    $existingPrNumber = (gh pr list --repo $repoFullName --head $branch --state open --json number --jq ".[0].number").Trim()
+    $existingPrNumber = Format-CommandOutput @(gh pr list --repo $repoFullName --head $branch --state open --json number --jq ".[0].number")
   } else {
     Write-Host "Open PR already exists: #$existingPrNumber" -ForegroundColor Yellow
   }
 
-  $prUrl = (gh pr view $existingPrNumber --repo $repoFullName --json url --jq ".url").Trim()
+  $prUrl = Format-CommandOutput @(gh pr view $existingPrNumber --repo $repoFullName --json url --jq ".url")
   Write-Host "PR: $prUrl" -ForegroundColor Green
 
   if ($RebaseMerge) {
