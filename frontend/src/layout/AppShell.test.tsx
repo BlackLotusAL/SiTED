@@ -6,6 +6,7 @@ import { apiClient } from "../api/client";
 import type { Identity } from "../api/types";
 import App from "../App";
 import { AppShell } from "./AppShell";
+import { APP_ROUTES } from "../routes/config";
 
 const learnerIdentity: Identity = {
   ip: "10.0.0.5",
@@ -137,6 +138,18 @@ describe("AppShell", () => {
     expect(await screen.findByText("权限不足")).toBeInTheDocument();
     expect(screen.queryByText("System settings placeholder for Task 10.")).not.toBeInTheDocument();
     settings.unmount();
+  });
+
+  it("does not expose the temporary typography preview route", async () => {
+    renderApp("/typography-preview", Promise.resolve(learnerIdentity));
+
+    const homeRoute = APP_ROUTES.find((route) => route.path === "/");
+    expect(homeRoute).toBeDefined();
+    expect(await screen.findByRole("heading", { name: homeRoute?.label })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Plex + Noto + JetBrains" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Source 全家桶" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "可读性优先" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "字体预览" })).not.toBeInTheDocument();
   });
 
   it("shows an unavailable identity placeholder instead of admin content when identity loading fails", async () => {
