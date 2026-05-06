@@ -1,3 +1,4 @@
+@import "./fonts.css";
 @import "./tokens.css";
 
 * {
@@ -14,7 +15,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   color: var(--ink);
-  font-family: var(--font);
+  font-family: var(--font-ui);
   background: var(--bg);
   font-synthesis: none;
   letter-spacing: 0;
@@ -127,7 +128,7 @@ a {
   margin: 14px 10px 6px;
   color: var(--subtle);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .nav-item {
@@ -141,7 +142,7 @@ a {
   gap: 12px;
   padding: 0 13px;
   font-size: 15px;
-  font-weight: 760;
+  font-weight: var(--font-weight-semibold);
   text-align: left;
   transition:
     background 0.16s var(--ease-standard),
@@ -203,7 +204,7 @@ a {
   margin-top: 10px;
   overflow-wrap: anywhere;
   font-size: 18px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .identity-state {
@@ -233,7 +234,7 @@ a {
 .topbar h1 {
   margin: 0;
   font-size: 30px;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
   line-height: 1.1;
   letter-spacing: 0;
 }
@@ -266,7 +267,7 @@ a {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
   transition:
     background 0.16s var(--ease-standard),
     border-color 0.16s var(--ease-standard),
@@ -331,7 +332,7 @@ a {
   margin: 0 0 7px;
   color: var(--primary-strong);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .page-placeholder h2 {
@@ -476,7 +477,7 @@ a {
   margin: 0 0 12px;
   color: var(--primary-strong);
   font-size: 18px;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
   line-height: 1.1;
 }
 
@@ -507,7 +508,7 @@ a {
   display: block;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .overview-facts strong {
@@ -537,7 +538,7 @@ a {
   margin: 0;
   font-size: 20px;
   line-height: 1.2;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .visual-header strong {
@@ -550,7 +551,7 @@ a {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
   margin-bottom: 14px;
 }
 
@@ -588,7 +589,7 @@ a {
   place-items: center;
   color: var(--subtle);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .day-cell {
@@ -600,7 +601,7 @@ a {
   display: grid;
   place-items: center;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .day-cell.is-empty {
@@ -720,7 +721,7 @@ meter::-webkit-meter-optimum-value {
   place-items: center;
   background: #eef1ff;
   color: var(--primary-strong);
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .task-row small {
@@ -738,7 +739,7 @@ label {
   gap: 7px;
   color: #3d4658;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .question-layout,
@@ -793,7 +794,7 @@ label {
   color: #3f4760;
   padding: 5px 8px;
   font-size: 12px;
-  font-weight: 780;
+  font-weight: var(--font-weight-semibold);
 }
 
 .question-card h3,
@@ -826,7 +827,7 @@ label {
   color: var(--danger);
   padding: 12px 14px;
   font-size: 14px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .detail-panel {
@@ -941,14 +942,14 @@ code {
   margin: 0;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 780;
+  font-weight: var(--font-weight-semibold);
   line-height: 1.45;
 }
 
 .mode-hint strong {
   margin-right: 8px;
   color: var(--ink);
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .options {
@@ -968,7 +969,7 @@ code {
   align-items: center;
   gap: 12px;
   text-align: left;
-  font-weight: 780;
+  font-weight: var(--font-weight-semibold);
   line-height: 1.45;
   transition:
     background 0.16s var(--ease-standard),
@@ -1038,7 +1039,7 @@ code {
   margin: 12px 0 0;
   color: var(--primary-strong);
   font-size: 14px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .answer-panel {
@@ -1099,7 +1100,7 @@ code {
   gap: 8px;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .question-jump select {
@@ -1148,7 +1149,7 @@ code {
 .mode-explainer .mode-copy strong {
   color: var(--ink);
   font-size: 15px;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .mode-explainer .mode-copy small {
@@ -1174,7 +1175,7 @@ code {
   background: transparent;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .segmented button.active {
@@ -1213,7 +1214,7 @@ code {
   background: #f7f9fc;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .table-row {
@@ -1264,7 +1265,7 @@ code {
   padding: 14px 24px;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .review-pagination .secondary-button {
@@ -1310,7 +1311,7 @@ code {
   gap: 6px;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .review-edit-row input {
@@ -1334,7 +1335,7 @@ code {
   display: grid;
   place-items: center;
   color: var(--muted);
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .status-chip.warning {
@@ -1372,7 +1373,7 @@ code {
   border-radius: var(--radius);
   background: #ffffff;
   color: #536076;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .sheet-grid .done,
@@ -1461,7 +1462,7 @@ code {
 .exam-result-summary p {
   margin: 0;
   color: var(--ink);
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .exam-result-summary div {
@@ -1469,7 +1470,7 @@ code {
   gap: 10px;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .autosave-state {
@@ -1530,7 +1531,7 @@ td {
 th {
   color: var(--muted);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 select,
@@ -1635,7 +1636,7 @@ textarea:focus {
 
 .option-entry > span {
   color: var(--primary-strong);
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .option-entry input[type="checkbox"] {
@@ -1689,7 +1690,7 @@ textarea:focus {
   margin: 0 0 14px;
   color: var(--ink);
   font-size: 18px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
   line-height: 1.55;
 }
 
@@ -1700,22 +1701,22 @@ textarea:focus {
 
 .token.keyword {
   color: var(--primary);
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .token.type {
   color: var(--violet);
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .token.function {
   color: var(--blue);
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .token.number {
   color: var(--amber);
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .memo-box,
@@ -1738,14 +1739,14 @@ textarea:focus {
   margin: 0;
   color: #76510f;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .empty-preview-note {
   margin: 0;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .stats-kpis {
@@ -1800,7 +1801,7 @@ textarea:focus {
 }
 
 .distribution-row span {
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .distribution-row strong {
@@ -1856,7 +1857,7 @@ textarea:focus {
 .ranking-list li::before {
   content: counter(ranking, decimal-leading-zero);
   color: var(--primary-strong);
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .ranking-list b {
@@ -1890,7 +1891,7 @@ textarea:focus {
   gap: 12px;
   color: var(--ink);
   font-size: 14px;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .chart-title span {
@@ -1922,7 +1923,7 @@ textarea:focus {
   color: var(--subtle);
   font-style: normal;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .mini-y-axis {
@@ -1934,7 +1935,7 @@ textarea:focus {
   align-items: flex-end;
   color: var(--subtle);
   font-size: 11px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .mini-chart-area {
@@ -2007,7 +2008,7 @@ textarea:focus {
   background: #171927;
   color: #ffffff;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
   text-align: center;
   white-space: nowrap;
   box-shadow: 0 10px 22px rgba(23, 25, 39, 0.18);
@@ -2031,7 +2032,7 @@ textarea:focus {
   padding: 0 var(--mini-chart-pad-x);
   color: var(--subtle);
   font-size: 11px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
   text-align: center;
 }
 
@@ -2065,7 +2066,7 @@ textarea:focus {
 .permission-preview > span {
   color: var(--muted);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .settings-form-actions {
@@ -2099,7 +2100,7 @@ textarea:focus {
   padding: 14px 12px;
   color: var(--ink);
   font-size: 14px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
   text-align: left;
   vertical-align: middle;
 }
@@ -2113,7 +2114,7 @@ textarea:focus {
 .muted-cell {
   color: var(--subtle);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .danger-text-button {
@@ -2144,7 +2145,7 @@ textarea:focus {
   box-shadow: 0 16px 34px rgba(132, 31, 31, 0.16);
   color: var(--danger);
   font-size: 14px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
   line-height: 1.35;
   pointer-events: auto;
 }
@@ -2172,7 +2173,7 @@ textarea:focus {
   margin: 0 0 14px;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .status-message.error {
@@ -2199,7 +2200,7 @@ textarea:focus {
   background: #f7f8ff;
   color: #35405c;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .danger-zone {
@@ -2238,7 +2239,7 @@ textarea:focus {
   margin-bottom: 8px;
   color: var(--ink);
   font-size: 15px;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .radio-option {
@@ -2263,7 +2264,7 @@ textarea:focus {
 
 .radio-option span {
   color: var(--ink);
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .radio-option small {
@@ -2276,7 +2277,7 @@ textarea:focus {
   margin: 0;
   color: #8e332f;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
 }
 
 .dialog-backdrop {
@@ -2550,13 +2551,13 @@ th {
 .brand strong {
   color: var(--ink);
   font-size: 21px;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .brand span {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 760;
+  font-weight: var(--font-weight-semibold);
 }
 
 .mark-shield {
@@ -2581,7 +2582,7 @@ th {
   margin: 16px 10px 7px;
   color: var(--subtle);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .nav-item {
@@ -2589,7 +2590,7 @@ th {
   min-height: 46px;
   color: var(--ink-soft);
   font-size: 15px;
-  font-weight: 800;
+  font-weight: var(--font-weight-semibold);
   transition:
     background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard),
@@ -2667,7 +2668,7 @@ th {
 .topbar h1 {
   color: var(--ink);
   font-size: 32px;
-  font-weight: 920;
+  font-weight: var(--font-weight-bold);
   line-height: 1.12;
 }
 
@@ -2686,7 +2687,7 @@ th {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
   box-shadow: var(--shadow-soft);
   transition:
     transform var(--duration-fast) var(--ease-standard),
@@ -2737,7 +2738,7 @@ th {
   min-height: 40px;
   border-radius: var(--radius);
   font-size: 14px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
   outline: none;
   transition:
     transform var(--duration-fast) var(--ease-standard),
@@ -2885,12 +2886,12 @@ th {
 .panel h2 {
   color: var(--ink);
   font-size: 25px;
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .panel h3 {
   color: var(--ink);
-  font-weight: 900;
+  font-weight: var(--font-weight-bold);
 }
 
 .metric-card {
@@ -2925,7 +2926,7 @@ th {
 .metric-card strong {
   color: var(--ink);
   font-size: 32px;
-  font-weight: 920;
+  font-weight: var(--font-weight-bold);
 }
 
 .overview-panel {
@@ -2939,7 +2940,7 @@ th {
 .overview-copy h2 {
   color: var(--ink);
   font-size: 30px;
-  font-weight: 920;
+  font-weight: var(--font-weight-bold);
 }
 
 .overview-copy {
@@ -3056,7 +3057,7 @@ th {
 label {
   color: var(--ink-soft);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 select,
@@ -3111,7 +3112,7 @@ textarea::placeholder {
   border: 1px solid color-mix(in srgb, var(--primary) 14%, transparent);
   background: var(--primary-soft);
   color: var(--primary-strong);
-  font-weight: 820;
+  font-weight: var(--font-weight-semibold);
 }
 
 .question-card h3,
@@ -3225,7 +3226,7 @@ code {
 
 .segmented button {
   color: var(--muted);
-  font-weight: 850;
+  font-weight: var(--font-weight-semibold);
 }
 
 .segmented button:hover {
@@ -3529,6 +3530,176 @@ th {
 .muted-cell,
 .review-state-panel {
   color: var(--muted);
+}
+
+/* Source typography system */
+body {
+  font-family: var(--font-ui);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.5;
+  font-optical-sizing: auto;
+  font-synthesis-weight: none;
+}
+
+button,
+input,
+select,
+textarea,
+table {
+  font-family: var(--font-ui);
+}
+
+h1,
+h2,
+h3,
+h4,
+.brand strong,
+.topbar h1,
+.panel h2,
+.panel h3,
+.question-card h3,
+.detail-panel h3,
+.mini-panel h3,
+.admin-preview-panel h2,
+.overview-copy h2,
+.visual-header h3,
+.exam-result-summary h3,
+.confirm-dialog-copy h3 {
+  font-family: var(--font-display);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.22;
+  letter-spacing: 0;
+  text-wrap: pretty;
+}
+
+.brand span,
+.nav-section,
+.nav-item,
+.identity-top,
+.identity-state,
+.topbar-actions,
+.question-progress,
+.mode-hint,
+.status-chip,
+.permission-list span,
+.tag-row span,
+.question-meta span,
+.review-pagination label,
+label,
+th {
+  font-family: var(--font-ui);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0;
+}
+
+.primary-button,
+.secondary-button,
+.ghost-button,
+.danger-button,
+.text-button,
+.icon-button,
+.theme-toggle,
+.segmented button,
+.question-nav-button,
+.question-jump,
+.submit-answer-button,
+.sheet-grid button {
+  font-family: var(--font-ui);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0;
+}
+
+.dashboard-card p,
+.overview-copy p,
+.question-card p,
+.detail-panel p,
+.mini-panel p,
+.answer-sheet p,
+.task-row small,
+.coverage-row small,
+.status-message,
+.loading-note,
+.memo-box,
+.preview-explanation,
+td {
+  font-family: var(--font-reading);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.62;
+}
+
+.markdown-preview-body,
+.question-stem-preview,
+.practice-stem,
+.answer-panel,
+.preview-explanation,
+.memo-box {
+  font-family: var(--font-reading);
+}
+
+.markdown-preview-body p {
+  font-size: 17px;
+  font-weight: var(--font-weight-book);
+  line-height: 1.68;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.practice-main .practice-stem p {
+  font-size: 18px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.72;
+}
+
+.preview-explanation .markdown-preview-body p {
+  font-size: 15px;
+  font-weight: var(--font-weight-book);
+  line-height: 1.72;
+}
+
+.option,
+.preview-option,
+.radio-option,
+.sheet-grid button,
+.option-entry {
+  font-family: var(--font-ui);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.option span,
+.preview-option span,
+.option-entry > span,
+.sheet-grid button strong {
+  font-weight: var(--font-weight-bold);
+}
+
+pre,
+code,
+.code-block,
+.code-block code,
+.markdown-editor-input {
+  font-family: var(--font-code);
+}
+
+pre,
+.code-block {
+  line-height: 1.66;
+}
+
+code,
+.code-block code,
+.markdown-editor-input {
+  font-size: 14px;
+  font-weight: var(--font-weight-regular);
+  line-height: 1.68;
+}
+
+.token.keyword,
+.token.type,
+.token.function,
+.token.number {
+  font-weight: var(--font-weight-semibold);
 }
 
 :root[data-theme="dark"] body {
