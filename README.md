@@ -9,7 +9,7 @@
 零摩擦接入 · IP 即身份 · 刷题复习闭环 · 题库管理
 
 [![Backend Tests](https://img.shields.io/badge/backend%20tests-148%20passing-success)](backend/src)
-[![Frontend Tests](https://img.shields.io/badge/frontend%20tests-70%20passing-success)](frontend/src)
+[![Frontend Tests](https://img.shields.io/badge/frontend%20tests-77%20passing-success)](frontend/src)
 [![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
@@ -101,8 +101,11 @@
 
 ### 🎨 界面体验亮点
 
-- 默认浅色主题，强调桌面端高频训练效率。
-- 左侧固定导航，学习入口和管理入口分区清晰。
+- 默认浅色主题，提供暗色主题切换，并把选择保存在当前浏览器。
+- 左侧固定导航，学习入口和管理入口分区清晰，顶部栏保留当前页面标题和高频入口。
+- 全局 design token 统一字体层级、间距、边框、阴影、状态色、图表色和焦点态。
+- 按钮、选项、卡片、表格、Toast、Dialog 和图表悬停状态提供局部动作反馈，遵守 `prefers-reduced-motion`。
+- 页面切换不再使用阻塞式整页退出动画；静态页面立即显示，数据页优先展示上次成功数据并后台刷新。
 - 首页展示今日训练、训练日历、核心指标和推荐工作流。
 - 题库页提供筛选、列表和题目预览的并排布局。
 - 练习页提供选项状态、提交反馈、解析、上一题/下一题和快速跳题。
@@ -250,8 +253,12 @@ VITE_API_BASE_URL=/api
 | 构建所有工作区 | `npm run build` | `npm.cmd run build` |
 | 执行 Prisma 数据库迁移 | `npm run db:migrate` | `npm.cmd run db:migrate` |
 | 写入确定性的本地开发数据 | `npm run db:seed` | `npm.cmd run db:seed` |
+| 创建 PR | `npm run pr:github` | `npm.cmd run pr:github` |
+| 创建 PR 并 rebase 合并 | `npm run pr:github:rebase` | `npm.cmd run pr:github:rebase` |
 
 种子数据会创建确定性的 `SITED-SEED*` 题目、访问者、角色绑定、训练记录、考试记录和审计日志。重复执行种子脚本会更新种子脚本拥有的数据，不会清空无关的本地数据。
+
+PR 自动化脚本位于 `scripts/github-pr.ps1`。它要求当前分支不是 `main/master`，工作树必须干净；推送当前分支，复用或创建 PR，并在 `pr:github:rebase` 下执行 rebase merge。推荐 token 权限：classic PAT 使用 `repo`；fine-grained token 对本仓库至少开启 `Contents: Read and write` 与 `Pull requests: Read and write`。
 
 ## 🛠️ 技术栈
 
@@ -266,6 +273,7 @@ VITE_API_BASE_URL=/api
   <li>⚡ <a href="https://vite.dev/"><strong>Vite 6</strong></a> · 前端开发服务器与构建工具</li>
   <li>🛣️ <a href="https://reactrouter.com/"><strong>React Router 7</strong></a> · 页面路由与权限入口</li>
   <li>🔷 <a href="https://www.typescriptlang.org/"><strong>TypeScript 5</strong></a> · 类型约束与前后端契约</li>
+  <li>🎞️ <a href="https://motion.dev/"><strong>Motion</strong></a> · 局部交互动效与动作反馈</li>
   <li>🎛️ <a href="https://lucide.dev/"><strong>lucide-react</strong></a> · 统一线性图标系统</li>
   <li>🧪 <a href="https://vitest.dev/"><strong>Vitest</strong></a> · 前端单元与组件测试</li>
   <li>🎭 <a href="https://playwright.dev/"><strong>Playwright</strong></a> · 端到端冒烟检查</li>
@@ -300,6 +308,7 @@ SiTED/
 ├── frontend/                # 前端应用、页面组件和端到端检查
 │   └── src/                 # 路由、页面、组件、接口封装和样式
 ├── docs/                    # 产品文档、开发计划和 README 图片
+├── scripts/                 # GitHub PR 自动化等开发辅助脚本
 ├── ui-prototype/            # 静态界面原型
 ├── docker-compose.yml       # 本地 PostgreSQL 服务
 └── package.json             # 工作区脚本
