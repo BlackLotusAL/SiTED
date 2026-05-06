@@ -45,8 +45,18 @@
   --shadow-focus: 0 0 0 4px var(--primary-ring);
   --radius: 8px;
   --radius-sm: 6px;
-  --font: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-  --mono-font: "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
+  --font-ui: "Source Sans 3", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --font-reading: "Source Sans 3", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+    sans-serif;
+  --font-display: "Source Sans 3", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+    sans-serif;
+  --font-code: "Source Code Pro", "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
+  --font-weight-regular: 400;
+  --font-weight-book: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font: var(--font-ui);
+  --mono-font: var(--font-code);
   --sidebar-width: 284px;
   --workspace-min: 920px;
   --space-card: 22px;
