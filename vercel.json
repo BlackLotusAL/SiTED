@@ -3,6 +3,11 @@
   "installCommand": "npm install",
   "buildCommand": "node ./node_modules/prisma/build/index.js generate --schema backend/prisma/schema.prisma && npm run build",
   "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/*.ts": {
+      "includeFiles": "example/questions.import.json"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/:path*",

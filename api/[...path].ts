@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 type ServerHandler = (req: unknown, res: unknown) => unknown;
 type ApiRequest = {
   body?: unknown;
@@ -9,6 +12,31 @@ type ApiResponse = {
   setHeader(name: string, value: string): void;
   end(value?: string): void;
 };
+
+interface DemoQuestionOption {
+  key: string;
+  text: string;
+  isCorrect?: boolean;
+}
+
+interface DemoQuestion {
+  id: string;
+  sourceCode: string | null;
+  subject: string;
+  language: string | null;
+  level: string;
+  type: string;
+  stemMd: string;
+  stemHtml: string;
+  explanationHtml: string;
+  explanationMd: string;
+  options: DemoQuestionOption[];
+  correctAnswers: string[];
+  memo: string | null;
+  tags: string[];
+  totalAttempts: number;
+  correctAttempts: number;
+}
 
 let cachedServer: ServerHandler | null = null;
 let bootstrapPromise: Promise<ServerHandler> | null = null;
@@ -137,14 +165,14 @@ function demoResponse(method: string, url: URL, body: unknown): { statusCode: nu
   const examAnswersMatch = pathname.match(/^\/api\/exams\/([^/]+)\/answers$/);
   if (method === "PATCH" && examAnswersMatch !== null) {
     const requestBody = asRecord(body);
-    const answers = asAnswerMap(requestBody.answers) ?? { "demo-q-1": ["B"] };
+    const answers = asAnswerMap(requestBody.answers) ?? defaultDemoAnswers();
     return ok(demoActiveExam(decodeURIComponent(examAnswersMatch[1]), answers));
   }
 
   const examSubmitMatch = pathname.match(/^\/api\/exams\/([^/]+)\/submit$/);
   if (method === "POST" && examSubmitMatch !== null) {
     const requestBody = asRecord(body);
-    const answers = asAnswerMap(requestBody.answers) ?? { "demo-q-1": ["B"] };
+    const answers = asAnswerMap(requestBody.answers) ?? defaultDemoAnswers();
     return ok(demoSubmittedExam(decodeURIComponent(examSubmitMatch[1]), answers));
   }
 
@@ -211,7 +239,7 @@ const DEMO_PERMISSIONS = [
   "config:reload"
 ];
 
-const DEMO_QUESTIONS = [
+const FALLBACK_DEMO_QUESTIONS: DemoQuestion[] = [
   {
     id: "demo-q-1",
     sourceCode: "DEMO-JAVA-001",
@@ -304,6 +332,105 @@ const DEMO_QUESTIONS = [
   }
 ];
 
+const DEMO_QUESTIONS = loadDemoQuestions();
+
+function loadDemoQuestions(): DemoQuestion[] {
+  for (const filePath of demoQuestionBankPaths()) {
+    try {
+      if (!existsSync(filePath)) {
+        continue;
+      }
+
+      const imported = normalizeImportedQuestions(JSON.parse(readFileSync(filePath, "utf8")));
+      if (imported.length > 0) {
+        return imported;
+      }
+    } catch {
+      // Fall through to the small embedded bank so the demo stays available.
+    }
+  }
+
+  return FALLBACK_DEMO_QUESTIONS;
+}
+
+function demoQuestionBankPaths() {
+  return [
+    join(process.cwd(), "example", "questions.import.json"),
+    join(__dirname, "..", "example", "questions.import.json"),
+    join(__dirname, "example", "questions.import.json")
+  ];
+}
+
+function normalizeImportedQuestions(input: unknown): DemoQuestion[] {
+  const batch = asRecord(input);
+  const questions = Array.isArray(batch.questions) ? batch.questions : [];
+
+  if (batch.version !== "1.0" || questions.length === 0) {
+    return [];
+  }
+
+  return questions
+    .map((question, index) => normalizeImportedQuestion(question, index))
+    .filter((question): question is DemoQuestion => question !== null);
+}
+
+function normalizeImportedQuestion(input: unknown, index: number): DemoQuestion | null {
+  const question = asRecord(input);
+  const sourceCode = stringValue(question.sourceCode);
+  const subject = stringValue(question.subject);
+  const level = stringValue(question.level);
+  const type = stringValue(question.type);
+  const stemMd = stringValue(question.stemMd);
+  const explanationMd = stringValue(question.explanationMd) ?? "";
+  const options = normalizeImportedOptions(question.options);
+  const correctAnswers = options.filter((option) => option.isCorrect === true).map((option) => option.key);
+
+  if (subject === null || level === null || type === null || stemMd === null || options.length === 0 || correctAnswers.length === 0) {
+    return null;
+  }
+
+  const id = sourceCode ?? `example-question-${index + 1}`;
+  const totalAttempts = 12 + (index % 19);
+  const correctAttempts = Math.max(1, Math.min(totalAttempts, Math.round(totalAttempts * (0.48 + (index % 7) * 0.06))));
+
+  return {
+    id,
+    sourceCode,
+    subject,
+    language: stringValue(question.language),
+    level,
+    type,
+    stemMd,
+    stemHtml: markdownParagraph(stemMd),
+    explanationHtml: markdownParagraph(explanationMd),
+    explanationMd,
+    options,
+    correctAnswers,
+    memo: stringValue(question.memo),
+    tags: stringArray(question.tags) ?? [],
+    totalAttempts,
+    correctAttempts
+  };
+}
+
+function normalizeImportedOptions(input: unknown): DemoQuestionOption[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input.flatMap((option) => {
+    const record = asRecord(option);
+    const key = stringValue(record.key);
+    const text = stringValue(record.text);
+
+    if (key === null || text === null) {
+      return [];
+    }
+
+    return [{ key, text, isCorrect: record.isCorrect === true }];
+  });
+}
+
 function demoDashboard() {
   const now = new Date();
   const year = now.getFullYear();
@@ -340,11 +467,7 @@ function demoDashboard() {
         count: index % 6 === 0 ? 0 : (index % 4) + 1
       }))
     },
-    coverage: [
-      { subject: "programming", count: 42 },
-      { subject: "security_privacy", count: 18 },
-      { subject: "refactoring", count: 25 }
-    ]
+    coverage: subjectCounts()
   };
 }
 
@@ -446,7 +569,7 @@ function demoMistake(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function demoBookmark(questionId = "demo-q-2", overrides: Record<string, unknown> = {}) {
+function demoBookmark(questionId = DEMO_QUESTIONS[1]?.id ?? DEMO_QUESTIONS[0].id, overrides: Record<string, unknown> = {}) {
   const question = findDemoQuestion(questionId);
 
   return {
@@ -498,7 +621,7 @@ function demoActiveExam(id = "demo-exam-active", answers: Record<string, string[
   };
 }
 
-function demoSubmittedExam(id = "demo-exam-1", answers: Record<string, string[]> = { "demo-q-1": ["B"], "demo-q-2": ["A", "C"] }) {
+function demoSubmittedExam(id = "demo-exam-1", answers: Record<string, string[]> = defaultDemoAnswers()) {
   const questions = DEMO_QUESTIONS.slice(0, 2).map((question) => {
     const submittedAnswers = answers[question.id] ?? [];
     const isCorrect = sameAnswerSet(submittedAnswers, question.correctAnswers);
@@ -524,6 +647,17 @@ function demoSubmittedExam(id = "demo-exam-1", answers: Record<string, string[]>
   };
 }
 
+function defaultDemoAnswers() {
+  const first = DEMO_QUESTIONS[0];
+  const second = DEMO_QUESTIONS[1] ?? first;
+  const wrongFirstAnswer = first.options.find((option) => !first.correctAnswers.includes(option.key))?.key ?? first.options[0]?.key ?? "A";
+
+  return {
+    [first.id]: [wrongFirstAnswer],
+    [second.id]: second.correctAnswers
+  };
+}
+
 function toExamQuestion(question: (typeof DEMO_QUESTIONS)[number]) {
   return {
     id: question.id,
@@ -539,7 +673,7 @@ function toExamQuestion(question: (typeof DEMO_QUESTIONS)[number]) {
 }
 
 function demoPracticeSubmit(body: Record<string, unknown>) {
-  const questionId = typeof body.questionId === "string" ? body.questionId : "demo-q-1";
+  const questionId = typeof body.questionId === "string" ? body.questionId : DEMO_QUESTIONS[0].id;
   const question = findDemoQuestion(questionId);
   const submittedAnswers = stringArray(body.submittedAnswers) ?? ["B"];
   const isCorrect = sameAnswerSet(submittedAnswers, question.correctAnswers);
@@ -563,15 +697,11 @@ function demoAdminStats() {
 
   return {
     questions: {
-      total: 85,
-      published: 81,
-      bySubject: [
-        { subject: "programming", count: 42 },
-        { subject: "security_privacy", count: 24 },
-        { subject: "refactoring", count: 19 }
-      ]
+      total: DEMO_QUESTIONS.length,
+      published: DEMO_QUESTIONS.length,
+      bySubject: subjectCounts()
     },
-    lowCorrectRateQuestions: DEMO_QUESTIONS.slice(0, 3).map((question) => ({
+    lowCorrectRateQuestions: DEMO_QUESTIONS.slice(0, 10).map((question) => ({
       id: question.id,
       sourceCode: question.sourceCode,
       stemMd: question.stemMd,
@@ -625,11 +755,21 @@ function demoRoleBindings() {
 }
 
 function findDemoQuestion(id: string | undefined) {
-  return DEMO_QUESTIONS.find((question) => question.id === decodeURIComponent(id ?? "")) ?? DEMO_QUESTIONS[0];
+  const decoded = decodeURIComponent(id ?? "");
+  return DEMO_QUESTIONS.find((question) => question.id === decoded || question.sourceCode === decoded) ?? DEMO_QUESTIONS[0];
 }
 
 function correctRate(question: { totalAttempts: number; correctAttempts: number }) {
   return question.totalAttempts === 0 ? 0 : Math.round((question.correctAttempts / question.totalAttempts) * 100);
+}
+
+function subjectCounts() {
+  const counts = new Map<string, number>();
+  for (const question of DEMO_QUESTIONS) {
+    counts.set(question.subject, (counts.get(question.subject) ?? 0) + 1);
+  }
+
+  return [...counts.entries()].map(([subject, count]) => ({ subject, count }));
 }
 
 function positiveInteger(value: string | null, fallback: number) {
@@ -652,6 +792,10 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringArray(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 function asAnswerMap(value: unknown): Record<string, string[]> | null {
@@ -685,4 +829,18 @@ function lastSevenDays() {
     const date = new Date(Date.now() - (6 - index) * 24 * 60 * 60 * 1000);
     return date.toISOString().slice(0, 10);
   });
+}
+
+function markdownParagraph(value: string | null): string {
+  if (value === null || value.trim().length === 0) {
+    return "";
+  }
+  if (value.trim().startsWith("<")) {
+    return value;
+  }
+  return `<p>${escapeHtml(value)}</p>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }

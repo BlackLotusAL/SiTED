@@ -68,18 +68,27 @@ describe("Vercel API demo fallback", () => {
 
   it("serves learner page data without a remote database", async () => {
     await expectJson("GET", "/api/questions?page=1&pageSize=100", {
-      items: expect.arrayContaining([expect.objectContaining({ id: "demo-q-1", stemMd: expect.any(String) })]),
+      items: expect.arrayContaining([
+        expect.objectContaining({ id: "EX-PROG-JAVA-WRK-S-001-001", sourceCode: "EX-PROG-JAVA-WRK-S-001-001" })
+      ]),
       page: 1,
-      total: expect.any(Number)
+      pageSize: 100,
+      total: 600
     });
-    await expectJson("GET", "/api/questions/demo-q-1", {
-      id: "demo-q-1",
+
+    await expectJson("GET", "/api/questions?subject=programming&language=java&level=working&type=single&page=1&pageSize=100", {
+      items: expect.arrayContaining([expect.objectContaining({ subject: "programming", language: "java", level: "working", type: "single" })]),
+      total: 28
+    });
+
+    await expectJson("GET", "/api/questions/EX-PROG-JAVA-WRK-S-001-001", {
+      id: "EX-PROG-JAVA-WRK-S-001-001",
       stemHtml: expect.stringContaining("<p>"),
       options: expect.any(Array)
     });
-    await expectJson("GET", "/api/questions/demo-q-1/recite", {
-      id: "demo-q-1",
-      correctAnswers: expect.arrayContaining(["A"])
+    await expectJson("GET", "/api/questions/EX-PROG-JAVA-WRK-S-001-001/recite", {
+      id: "EX-PROG-JAVA-WRK-S-001-001",
+      correctAnswers: expect.arrayContaining(["D"])
     });
     await expectJson("GET", "/api/review/mistakes", { items: expect.any(Array) });
     await expectJson("GET", "/api/review/bookmarks", { items: expect.any(Array) });
@@ -93,7 +102,7 @@ describe("Vercel API demo fallback", () => {
       questions: expect.any(Array)
     });
     await expectJson("GET", "/api/admin/stats", {
-      questions: expect.objectContaining({ total: expect.any(Number) }),
+      questions: expect.objectContaining({ total: 600 }),
       trends: expect.any(Object)
     });
     await expectJson("GET", "/api/admin/settings/ip-role-bindings", {
@@ -105,7 +114,7 @@ describe("Vercel API demo fallback", () => {
   it("accepts demo write actions used by the preview pages", async () => {
     await expectJson("POST", "/api/practice/submit", {
       attemptId: expect.any(String),
-      correctAnswers: expect.arrayContaining(["A"])
+      correctAnswers: expect.arrayContaining(["D"])
     });
     await expectJson("POST", "/api/bookmarks/demo-q-1", { id: expect.any(String) });
     await expectJson("DELETE", "/api/bookmarks/demo-q-1", { deleted: true });
