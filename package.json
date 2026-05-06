@@ -13,6 +13,8 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
+    "pr:github": "powershell -ExecutionPolicy Bypass -File scripts/github-pr.ps1",
+    "pr:github:rebase": "powershell -ExecutionPolicy Bypass -File scripts/github-pr.ps1 -RebaseMerge",
     "e2e": "npm run e2e --workspace frontend",
     "db:migrate": "node --env-file=.env ./node_modules/prisma/build/index.js migrate dev --schema backend/prisma/schema.prisma",
     "db:seed": "node --env-file=.env ./node_modules/prisma/build/index.js db seed --schema backend/prisma/schema.prisma"
