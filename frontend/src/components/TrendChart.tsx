@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { type CSSProperties, useMemo, useState } from "react";
 
 export interface TrendChartPoint {
@@ -44,15 +45,18 @@ export function TrendChart({ title, unit, data, max, color }: TrendChartProps) {
               key={point.label}
               style={{ "--bar-height": `${heightPercent}%` } as CSSProperties}
             >
-              <button
+              <motion.button
                 aria-label={`${point.label} ${title} ${point.value} ${unit}`}
                 className={`chart-bar ${color}`}
                 data-testid="trend-chart-bar"
+                initial={{ scaleY: 0.3, opacity: 0.78 }}
+                animate={{ scaleY: 1, opacity: 1 }}
+                transition={{ duration: 0.28, delay: index * 0.025, ease: [0.2, 0, 0, 1] }}
                 onBlur={() => setActivePoint(null)}
                 onFocus={() => setActivePoint(point)}
                 onMouseEnter={() => setActivePoint(point)}
                 onMouseLeave={() => setActivePoint(null)}
-                style={{ height: "var(--bar-height)" }}
+                style={{ height: "var(--bar-height)", transformOrigin: "bottom" }}
                 type="button"
               />
               {activePoint === point ? (

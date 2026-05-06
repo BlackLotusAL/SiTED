@@ -46,7 +46,7 @@ export function Sidebar({ identity, identityStatus }: SidebarProps) {
           <strong>{identity.roleLabel}</strong>
         </div>
         <div className="identity-ip">{identity.ip}</div>
-        {identityStatus === "loading" ? <p className="identity-state">正在加载身份...</p> : null}
+        {identityStatus === "loading" ? <span className="identity-loading-indicator" aria-label="身份加载中" /> : null}
         {identityStatus === "error" ? <p className="identity-state error">无法加载身份，已使用访客学习者模式</p> : null}
       </div>
     </aside>

@@ -10,6 +10,7 @@ import type {
   ReviewQuestionSummary,
   ReviewRecordsResponse
 } from "../api/types";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import { ReviewTabs, type ReviewTab } from "../components/ReviewTabs";
 import {
   getLanguageLabel,
@@ -25,6 +26,7 @@ import {
   type QuestionType,
   type Subject
 } from "../domain/labels";
+import { invalidateStaleResource, useStaleResource, type StaleResource } from "../hooks/useStaleResource";
 
 type ResourceStatus = "idle" | "loading" | "ready" | "error";
 type ResourceState<TItem> = {
@@ -34,94 +36,52 @@ type ResourceState<TItem> = {
 
 type BookmarkPatchResponse = Partial<Pick<ReviewBookmarkItem, "id" | "questionId" | "note" | "tags" | "createdAt" | "question">>;
 
-const EMPTY_MISTAKES: ResourceState<ReviewMistakeItem> = { status: "idle", items: [] };
-const EMPTY_BOOKMARKS: ResourceState<ReviewBookmarkItem> = { status: "idle", items: [] };
-const EMPTY_RECORDS: ResourceState<ReviewExamRecord> = { status: "idle", items: [] };
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_PAGE_SIZE = 10;
 
 export function ReviewPage() {
   const [activeTab, setActiveTab] = useState<ReviewTab>("mistakes");
-  const [mistakesState, setMistakesState] = useState<ResourceState<ReviewMistakeItem>>(EMPTY_MISTAKES);
-  const [bookmarksState, setBookmarksState] = useState<ResourceState<ReviewBookmarkItem>>(EMPTY_BOOKMARKS);
-  const [recordsState, setRecordsState] = useState<ResourceState<ReviewExamRecord>>(EMPTY_RECORDS);
   const [editingBookmarkId, setEditingBookmarkId] = useState<string | null>(null);
   const [bookmarkNoteDraft, setBookmarkNoteDraft] = useState("");
   const [bookmarkTagsDraft, setBookmarkTagsDraft] = useState("");
-
-  useEffect(() => {
-    let isMounted = true;
-
-    if (activeTab === "mistakes") {
-      setMistakesState((current) => ({ ...current, status: "loading" }));
-      apiClient
-        .get<ReviewMistakesResponse>("/review/mistakes")
-        .then((payload) => {
-          if (isMounted) {
-            setMistakesState({ status: "ready", items: payload?.items ?? [] });
-          }
-        })
-        .catch(() => {
-          if (isMounted) {
-            setMistakesState({ status: "error", items: [] });
-          }
-        });
-    }
-
-    if (activeTab === "bookmarks") {
-      setBookmarksState((current) => ({ ...current, status: "loading" }));
-      apiClient
-        .get<ReviewBookmarksResponse>("/review/bookmarks")
-        .then((payload) => {
-          if (isMounted) {
-            setBookmarksState({ status: "ready", items: payload?.items ?? [] });
-          }
-        })
-        .catch(() => {
-          if (isMounted) {
-            setBookmarksState({ status: "error", items: [] });
-          }
-        });
-    }
-
-    if (activeTab === "records") {
-      setRecordsState((current) => ({ ...current, status: "loading" }));
-      apiClient
-        .get<ReviewRecordsResponse>("/review/records")
-        .then((payload) => {
-          if (isMounted) {
-            setRecordsState({ status: "ready", items: payload?.items ?? [] });
-          }
-        })
-        .catch(() => {
-          if (isMounted) {
-            setRecordsState({ status: "error", items: [] });
-          }
-        });
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [activeTab]);
+  const mistakesResource = useStaleResource<ReviewMistakesResponse>({
+    key: "/review/mistakes",
+    enabled: activeTab === "mistakes",
+    load: async () => (await apiClient.get<ReviewMistakesResponse>("/review/mistakes")) ?? { items: [] }
+  });
+  const bookmarksResource = useStaleResource<ReviewBookmarksResponse>({
+    key: "/review/bookmarks",
+    enabled: activeTab === "bookmarks",
+    load: async () => (await apiClient.get<ReviewBookmarksResponse>("/review/bookmarks")) ?? { items: [] }
+  });
+  const recordsResource = useStaleResource<ReviewRecordsResponse>({
+    key: "/review/records",
+    enabled: activeTab === "records",
+    load: async () => (await apiClient.get<ReviewRecordsResponse>("/review/records")) ?? { items: [] }
+  });
+  const mistakesState = toResourceState<ReviewMistakeItem>(mistakesResource);
+  const bookmarksState = toResourceState<ReviewBookmarkItem>(bookmarksResource);
+  const recordsState = toResourceState<ReviewExamRecord>(recordsResource);
+  const activeResource =
+    activeTab === "mistakes" ? mistakesResource : activeTab === "bookmarks" ? bookmarksResource : recordsResource;
 
   async function updateMistakeMastery(item: ReviewMistakeItem) {
     const updated = await apiClient.patch<ReviewMistakeItem>(`/review/mistakes/${item.id}`, {
       isMastered: !item.isMastered
     });
 
-    setMistakesState((current) => ({
-      ...current,
-      items: current.items.map((candidate) => (candidate.id === item.id ? updated ?? candidate : candidate))
+    mistakesResource.setData((current) => ({
+      items: (current?.items ?? []).map((candidate) => (candidate.id === item.id ? updated ?? candidate : candidate))
     }));
+    invalidateStaleResource("/dashboard");
   }
 
   async function removeMistake(item: ReviewMistakeItem) {
     await apiClient.delete<{ deleted: boolean }>(`/review/mistakes/${item.id}`);
-    setMistakesState((current) => ({
-      ...current,
-      items: current.items.filter((candidate) => candidate.id !== item.id)
+    mistakesResource.setData((current) => ({
+      items: (current?.items ?? []).filter((candidate) => candidate.id !== item.id)
     }));
+    invalidateStaleResource("/dashboard");
   }
 
   function startEditingBookmark(item: ReviewBookmarkItem) {
@@ -135,9 +95,8 @@ export function ReviewPage() {
     const tags = normalizeTags(bookmarkTagsDraft);
     const updated = await apiClient.patch<BookmarkPatchResponse>(`/bookmarks/${item.questionId}`, { note, tags });
 
-    setBookmarksState((current) => ({
-      ...current,
-      items: current.items.map((candidate) =>
+    bookmarksResource.setData((current) => ({
+      items: (current?.items ?? []).map((candidate) =>
         candidate.id === item.id
           ? {
               ...candidate,
@@ -155,10 +114,10 @@ export function ReviewPage() {
 
   async function removeBookmark(item: ReviewBookmarkItem) {
     await apiClient.delete<{ deleted: boolean }>(`/bookmarks/${item.questionId}`);
-    setBookmarksState((current) => ({
-      ...current,
-      items: current.items.filter((candidate) => candidate.id !== item.id)
+    bookmarksResource.setData((current) => ({
+      items: (current?.items ?? []).filter((candidate) => candidate.id !== item.id)
     }));
+    invalidateStaleResource("/questions");
     if (editingBookmarkId === item.id) {
       setEditingBookmarkId(null);
     }
@@ -171,6 +130,11 @@ export function ReviewPage() {
       </div>
 
       <div className="review-panels">
+        {activeResource.error && activeResource.data !== undefined ? (
+          <p className="status-message error" role="alert">
+            复习数据加载失败，已保留上次成功数据。
+          </p>
+        ) : null}
         {activeTab === "mistakes" ? <MistakesPanel state={mistakesState} onUpdateMastery={updateMistakeMastery} onRemove={removeMistake} /> : null}
         {activeTab === "bookmarks" ? (
           <BookmarksPanel
@@ -192,6 +156,20 @@ export function ReviewPage() {
   );
 }
 
+function toResourceState<TItem>(
+  resource: Pick<StaleResource<{ items?: TItem[] }>, "data" | "error" | "isInitialLoading">
+): ResourceState<TItem> {
+  if (resource.data) {
+    return { status: "ready", items: resource.data.items ?? [] };
+  }
+
+  if (resource.error) {
+    return { status: "error", items: [] };
+  }
+
+  return { status: resource.isInitialLoading ? "loading" : "idle", items: [] };
+}
+
 function MistakesPanel({
   state,
   onUpdateMastery,
@@ -204,7 +182,7 @@ function MistakesPanel({
   const pagination = usePaginatedItems(state.items);
 
   if (state.status === "loading" || state.status === "idle") {
-    return <PanelState message="正在加载复习数据..." />;
+    return <LoadingSkeleton variant="review-table" />;
   }
 
   if (state.status === "error") {
@@ -276,7 +254,7 @@ function BookmarksPanel({
   const pagination = usePaginatedItems(state.items);
 
   if (state.status === "loading" || state.status === "idle") {
-    return <PanelState message="正在加载复习数据..." />;
+    return <LoadingSkeleton variant="review-table" />;
   }
 
   if (state.status === "error") {
@@ -361,7 +339,7 @@ function RecordsPanel({ state }: { state: ResourceState<ReviewExamRecord> }) {
   const pagination = usePaginatedItems(state.items);
 
   if (state.status === "loading" || state.status === "idle") {
-    return <PanelState message="正在加载复习数据..." />;
+    return <LoadingSkeleton variant="review-table" />;
   }
 
   if (state.status === "error") {

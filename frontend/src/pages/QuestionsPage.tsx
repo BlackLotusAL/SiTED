@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../api/client";
 import type { QuestionDetail, QuestionListItem, QuestionListResponse, ReviewBookmarksResponse } from "../api/types";
 import { BookmarkStateIcon } from "../components/BookmarkStateIcon";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import { QuestionPreview } from "../components/QuestionPreview";
 import {
   getLanguageLabel,
@@ -18,6 +20,7 @@ import {
   type QuestionType,
   type Subject
 } from "../domain/labels";
+import { invalidateStaleResource, useStaleResource } from "../hooks/useStaleResource";
 
 const PAGE_SIZE = 100;
 const FILTER_STORAGE_KEY = "sited.questions.filters.v1";
@@ -40,101 +43,57 @@ const DEFAULT_FILTERS: QuestionFilters = {
 
 export function QuestionsPage() {
   const [filters, setFilters] = useState<QuestionFilters>(() => loadStoredFilters());
-  const [questions, setQuestions] = useState<QuestionListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<QuestionDetail | null>(null);
-  const [listStatus, setListStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [bookmarkedQuestionIds, setBookmarkedQuestionIds] = useState<Set<string>>(() => new Set());
   const [bookmarkingQuestionIds, setBookmarkingQuestionIds] = useState<Set<string>>(() => new Set());
   const [bookmarkError, setBookmarkError] = useState<string | null>(null);
   const practiceHref = useMemo(() => `/practice?${filtersToSearchParams(filters).toString()}`, [filters]);
+  const questionListKey = useMemo(() => `/questions?${filtersToSearchParams(filters).toString()}`, [filters]);
+  const questionListResource = useStaleResource<QuestionListItem[]>({
+    key: questionListKey,
+    load: () => fetchAllQuestions(filters)
+  });
+  const detailResource = useStaleResource<QuestionDetail | null>({
+    key: selectedId === null ? "/questions:none" : `/questions/${selectedId}`,
+    enabled: selectedId !== null,
+    load: async () => (selectedId === null ? null : (await apiClient.get<QuestionDetail>(`/questions/${selectedId}`)) ?? null)
+  });
+  const bookmarkResource = useStaleResource<ReviewBookmarksResponse>({
+    key: "/review/bookmarks",
+    load: async () => (await apiClient.get<ReviewBookmarksResponse>("/review/bookmarks")) ?? { items: [] }
+  });
+  const questions = questionListResource.data ?? [];
+  const detail = detailResource.data ?? null;
 
   useEffect(() => {
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
   }, [filters]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    apiClient
-      .get<ReviewBookmarksResponse>("/review/bookmarks")
-      .then((payload) => {
-        if (isMounted) {
-          setBookmarkedQuestionIds(new Set((payload?.items ?? []).map((item) => item.questionId)));
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setBookmarkError("收藏状态加载失败，请稍后重试。");
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    if (bookmarkResource.data) {
+      setBookmarkedQuestionIds(new Set(bookmarkResource.data.items.map((item) => item.questionId)));
+    }
+  }, [bookmarkResource.data]);
 
   useEffect(() => {
-    let isMounted = true;
-    setListStatus("loading");
-    setSelectedId(null);
-    setDetail(null);
-    setDetailStatus("idle");
-
-    fetchAllQuestions(filters)
-      .then((items) => {
-        if (!isMounted) {
-          return;
-        }
-        setQuestions(items);
-        setSelectedId(items[0]?.id ?? null);
-        setListStatus("ready");
-      })
-      .catch(() => {
-        if (!isMounted) {
-          return;
-        }
-        setQuestions([]);
-        setSelectedId(null);
-        setListStatus("error");
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [filters]);
+    if (bookmarkResource.error && bookmarkResource.data === undefined) {
+      setBookmarkError("收藏状态加载失败，请稍后重试。");
+    }
+  }, [bookmarkResource.data, bookmarkResource.error]);
 
   useEffect(() => {
-    if (selectedId === null) {
-      setDetail(null);
-      setDetailStatus("idle");
+    if (questionListResource.data === undefined) {
+      setSelectedId(null);
       return;
     }
 
-    let isMounted = true;
-    setDetailStatus("loading");
-    apiClient
-      .get<QuestionDetail>(`/questions/${selectedId}`)
-      .then((payload) => {
-        if (!isMounted) {
-          return;
-        }
-        setDetail(payload ?? null);
-        setDetailStatus("ready");
-      })
-      .catch(() => {
-        if (!isMounted) {
-          return;
-        }
-        setDetail(null);
-        setDetailStatus("error");
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedId]);
+    setSelectedId((current) => {
+      if (current && questionListResource.data?.some((question) => question.id === current)) {
+        return current;
+      }
+      return questionListResource.data?.[0]?.id ?? null;
+    });
+  }, [questionListResource.data]);
 
   async function toggleBookmark(questionId: string) {
     if (bookmarkingQuestionIds.has(questionId)) {
@@ -157,6 +116,7 @@ export function QuestionsPage() {
         await apiClient.post(`/bookmarks/${questionId}`, {});
         setBookmarkedQuestionIds((current) => new Set(current).add(questionId));
       }
+      invalidateStaleResource("/review/bookmarks");
     } catch {
       setBookmarkError("收藏操作失败，请稍后重试。");
     } finally {
@@ -201,17 +161,20 @@ export function QuestionsPage() {
               {bookmarkError}
             </div>
           ) : null}
-          {listStatus === "loading" ? <div className="panel">正在加载真实题目...</div> : null}
-          {listStatus === "error" ? <div className="panel" role="alert">题目加载失败，请稍后重试。</div> : null}
-          {listStatus === "ready" && questions.length === 0 ? <div className="panel">当前筛选条件下暂无已发布题目。</div> : null}
+          {questionListResource.isInitialLoading ? <LoadingSkeleton variant="question-list" /> : null}
+          {questionListResource.error && questionListResource.data === undefined ? <div className="panel" role="alert">题目加载失败，请稍后重试。</div> : null}
+          {questionListResource.data !== undefined && questions.length === 0 ? <div className="panel">当前筛选条件下暂无已发布题目。</div> : null}
           {questions.map((question) => {
             const summary = plainText(question.stemMd);
             const isBookmarked = bookmarkedQuestionIds.has(question.id);
             const isBookmarking = bookmarkingQuestionIds.has(question.id);
             return (
-              <article
+              <motion.article
                 className={question.id === selectedId ? "question-card selected" : "question-card"}
                 onClick={() => setSelectedId(question.id)}
+                layout
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.995 }}
                 key={question.id}
               >
                 <div className="question-meta">
@@ -241,14 +204,14 @@ export function QuestionsPage() {
                     <BookmarkStateIcon isBookmarked={isBookmarked} size={16} />
                   </button>
                 </div>
-              </article>
+              </motion.article>
             );
           })}
         </section>
 
         <QuestionPreview
-          detail={detailStatus === "error" ? null : detail}
-          loading={detailStatus === "loading"}
+          detail={detailResource.error && detailResource.data === undefined ? null : detail}
+          loading={detailResource.isInitialLoading}
           isBookmarked={detail !== null && bookmarkedQuestionIds.has(detail.id)}
           isBookmarking={detail !== null && bookmarkingQuestionIds.has(detail.id)}
           onToggleBookmark={(questionId) => {

@@ -1,8 +1,10 @@
 import { AlertTriangle, CheckCircle2, Flag, FlagOff } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { motion } from "motion/react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { ExamDetail, ExamListResponse, ExamQuestion } from "../api/types";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import {
   getLanguageLabel,
   getLevelLabel,
@@ -14,6 +16,7 @@ import {
   type Level,
   type Subject
 } from "../domain/labels";
+import { invalidateStaleResource, setStaleResourceData, useStaleResource } from "../hooks/useStaleResource";
 
 type ExamViewState = "loading" | "unstarted" | "answering" | "confirming" | "review" | "error";
 type ExamSource = { subject: Subject; language: Language | null; level: Level };
@@ -23,8 +26,10 @@ export function ExamPage() {
   const examId = searchParams.get("examId");
   const [viewState, setViewState] = useState<ExamViewState>("loading");
   const [exam, setExam] = useState<ExamDetail | null>(null);
+  const [hasLocalExamState, setHasLocalExamState] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const answersRef = useRef<Record<string, string[]>>({});
   const [flaggedQuestionIds, setFlaggedQuestionIds] = useState<Set<string>>(() => new Set());
   const [autosaveState, setAutosaveState] = useState("尚未保存");
   const [source, setSource] = useState<{ subject: Subject; language: Language; level: Level }>({
@@ -33,70 +38,56 @@ export function ExamPage() {
     level: "working"
   });
 
-  useEffect(() => {
-    let isMounted = true;
-    setViewState("loading");
-
-    async function loadExam() {
-      try {
-        if (examId) {
-          const detail = await apiClient.get<ExamDetail>(`/exams/${examId}`);
-          if (!isMounted) {
-            return;
-          }
-          setExamState(detail ?? null);
-          return;
-        }
-
-        const payload = await apiClient.get<ExamListResponse>("/exams");
-        if (!isMounted) {
-          return;
-        }
-        const examToOpen = selectExamToOpen(payload?.items ?? []);
-        if (!examToOpen) {
-          setViewState("unstarted");
-          return;
-        }
-        const detail = await apiClient.get<ExamDetail>(`/exams/${examToOpen.id}`);
-        if (!isMounted) {
-          return;
-        }
-        setExamState(detail ?? null);
-      } catch {
-        if (!isMounted) {
-          return;
-        }
-        setViewState("error");
-      }
-    }
-
-    void loadExam();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [examId]);
-
-  const currentQuestion = exam?.questions[currentIndex] ?? null;
-  const currentAnswers = currentQuestion ? answers[currentQuestion.id] ?? [] : [];
-  const totalQuestions = exam?.questions.length ?? 0;
+  const initialExamResource = useStaleResource<ExamDetail | null>({
+    key: examId ? `/exams/${examId}` : "/exams:open",
+    load: () => loadInitialExam(examId)
+  });
+  const effectiveExam = hasLocalExamState ? exam : exam ?? initialExamResource.data ?? null;
+  const effectiveViewState =
+    viewState === "loading" && initialExamResource.data !== undefined ? viewStateForExam(initialExamResource.data) : viewState;
+  const currentQuestion = effectiveExam?.questions[currentIndex] ?? null;
+  const currentAnswers = currentQuestion ? answers[currentQuestion.id] ?? effectiveExam?.answers?.[currentQuestion.id] ?? [] : [];
+  const totalQuestions = effectiveExam?.questions.length ?? 0;
   const answeredCount = useMemo(() => Object.values(answers).filter((value) => value.length > 0).length, [answers]);
   const unansweredCount = Math.max(totalQuestions - answeredCount, 0);
+  answersRef.current = answers;
+
+  useEffect(() => {
+    if (initialExamResource.data !== undefined) {
+      setExamState(initialExamResource.data);
+    }
+  }, [initialExamResource.data]);
+
+  useEffect(() => {
+    setHasLocalExamState(false);
+    setExam(null);
+    setViewState("loading");
+  }, [examId]);
+
+  useEffect(() => {
+    if (initialExamResource.error && initialExamResource.data === undefined) {
+      setViewState("error");
+    }
+  }, [initialExamResource.data, initialExamResource.error]);
 
   async function startExam() {
     await startExamWithSource(source);
   }
 
   function restartExam() {
-    if (exam === null) {
+    const examForRestart = effectiveExam;
+    if (examForRestart === null) {
       return;
     }
     setSource((current) => ({
-      subject: exam.subject as Subject,
-      language: (exam.language ?? current.language) as Language,
-      level: exam.level as Level
+      subject: examForRestart.subject as Subject,
+      language: (examForRestart.language ?? current.language) as Language,
+      level: examForRestart.level as Level
     }));
+    setHasLocalExamState(true);
     setExam(null);
+    initialExamResource.setData(null);
+    answersRef.current = {};
     setAnswers({});
     setFlaggedQuestionIds(new Set());
     setCurrentIndex(0);
@@ -108,23 +99,34 @@ export function ExamPage() {
     setViewState("loading");
     try {
       const created = await apiClient.post<ExamDetail>("/exams", nextSource);
+      if (created) {
+        setStaleResourceData(`/exams/${created.id}`, created);
+        setStaleResourceData("/exams:open", created);
+      }
       setExamState(created ?? null);
+      invalidateStaleResource("/dashboard");
+      invalidateStaleResource("/review");
+      invalidateStaleResource("/admin/stats");
     } catch {
       setViewState("error");
     }
   }
 
   function setExamState(nextExam: ExamDetail | null) {
+    setHasLocalExamState(true);
     if (nextExam === null) {
+      setExam(null);
+      answersRef.current = {};
       setViewState("unstarted");
       return;
     }
     setExam(nextExam);
+    answersRef.current = nextExam.answers ?? {};
     setAnswers(nextExam.answers ?? {});
     setFlaggedQuestionIds(new Set(nextExam.flaggedQuestionIds ?? []));
     setCurrentIndex(0);
     setAutosaveState(nextExam.status === "in_progress" ? "等待保存" : "已交卷");
-    setViewState(nextExam.status === "submitted" ? "review" : "answering");
+    setViewState(viewStateForExam(nextExam));
   }
 
   function toggleAnswer(question: ExamQuestion, key: string) {
@@ -139,7 +141,9 @@ export function ExamPage() {
             ? existing.filter((item) => item !== key)
             : [...existing, key]
           : [key];
-      return { ...current, [question.id]: nextAnswers };
+      const next = { ...current, [question.id]: nextAnswers };
+      answersRef.current = next;
+      return next;
     });
     setAutosaveState("有未保存作答");
   }
@@ -148,10 +152,13 @@ export function ExamPage() {
     if (exam === null) {
       return;
     }
-    const updated = await apiClient.patch<ExamDetail>(`/exams/${exam.id}/answers`, { answers });
+    const answersForSave = answersRef.current;
+    const updated = await apiClient.patch<ExamDetail>(`/exams/${exam.id}/answers`, { answers: answersForSave });
     if (updated) {
       setExam(updated);
-      setAnswers(updated.answers ?? answers);
+      setAnswers(updated.answers ?? answersForSave);
+      setStaleResourceData(`/exams/${updated.id}`, updated);
+      setStaleResourceData("/exams:open", updated);
     }
     setAutosaveState("已保存刚刚");
     setCurrentIndex((current) => Math.min(current + 1, Math.max(totalQuestions - 1, 0)));
@@ -176,15 +183,23 @@ export function ExamPage() {
     if (exam === null) {
       return;
     }
-    const submitted = await apiClient.post<ExamDetail>(`/exams/${exam.id}/submit`, { answers });
+    const answersForSubmit = answersRef.current;
+    const submitted = await apiClient.post<ExamDetail>(`/exams/${exam.id}/submit`, { answers: answersForSubmit });
+    if (submitted) {
+      setStaleResourceData(`/exams/${submitted.id}`, submitted);
+      setStaleResourceData("/exams:open", submitted);
+      invalidateStaleResource("/dashboard");
+      invalidateStaleResource("/review");
+      invalidateStaleResource("/admin/stats");
+    }
     setExamState(submitted ?? exam);
   }
 
-  if (viewState === "loading") {
-    return <section className="panel">正在加载模拟考状态...</section>;
+  if (initialExamResource.isInitialLoading && effectiveExam === null) {
+    return <LoadingSkeleton variant="exam" />;
   }
 
-  if (viewState === "error") {
+  if (effectiveViewState === "error") {
     return (
       <section className="panel" role="alert">
         模拟考数据加载失败，请确认题库题量满足组卷要求。
@@ -192,7 +207,7 @@ export function ExamPage() {
     );
   }
 
-  if (viewState === "unstarted" || exam === null || currentQuestion === null) {
+  if (effectiveViewState === "unstarted" || effectiveExam === null || currentQuestion === null) {
     return (
       <section className="panel exam-start-panel">
         <h2>未启动模拟考</h2>
@@ -211,19 +226,19 @@ export function ExamPage() {
     );
   }
 
-  const isReview = viewState === "review";
+  const isReview = effectiveViewState === "review";
   const isCurrentFlagged = flaggedQuestionIds.has(currentQuestion.id);
-  const reviewSummary = isReview ? buildExamReviewSummary(exam) : null;
+  const reviewSummary = isReview ? buildExamReviewSummary(effectiveExam) : null;
 
   return (
     <div className="exam-layout">
       <section className="panel exam-paper">
         <div className="question-progress">
-          <span>模拟考 / {sourceLabel(exam.subject, exam.language, exam.level)}</span>
-          <strong>{isReview ? "复盘中" : formatRemaining(exam.deadlineAt)}</strong>
+          <span>模拟考 / {sourceLabel(effectiveExam.subject, effectiveExam.language, effectiveExam.level)}</span>
+          <strong>{isReview ? "复盘中" : formatRemaining(effectiveExam.deadlineAt)}</strong>
         </div>
-        <h2>{sourceLabel(exam.subject, exam.language, exam.level)} 模拟考</h2>
-        <div className="markdown-preview-body" dangerouslySetInnerHTML={{ __html: markdownParagraph(currentQuestion.stemMd) }} />
+        <h2>{sourceLabel(effectiveExam.subject, effectiveExam.language, effectiveExam.level)} 模拟考</h2>
+        <StableHtml className="markdown-preview-body" html={markdownParagraph(currentQuestion.stemMd)} />
         <div className={currentQuestion.type === "multiple" ? "options multi" : "options"} role="group" aria-label="考试答案选项">
           {currentQuestion.options.map((option) => {
             const selected = currentAnswers.includes(option.key);
@@ -238,16 +253,18 @@ export function ExamPage() {
               .join(" ");
 
             return (
-              <button
+              <motion.button
                 aria-label={`${option.key} ${option.text}`}
                 className={className}
                 type="button"
+                whileHover={{ x: isReview ? 0 : 3 }}
+                whileTap={{ scale: isReview ? 1 : 0.992 }}
                 onClick={() => toggleAnswer(currentQuestion, option.key)}
                 key={option.key}
               >
                 <span>{option.key}</span>
                 {option.text}
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -262,10 +279,15 @@ export function ExamPage() {
           </button>
         </div>
         {isReview ? (
-          <div className={`answer-panel review-state ${currentQuestion.isCorrect ? "result-correct" : "result-wrong"}`}>
+          <motion.div
+            className={`answer-panel review-state ${currentQuestion.isCorrect ? "result-correct" : "result-wrong"}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+          >
             <strong>{currentQuestion.isCorrect ? "回答正确" : "回答错误"}</strong>
             <p>{currentQuestion.explanationMd ?? "暂无解析"}</p>
-          </div>
+          </motion.div>
         ) : null}
       </section>
 
@@ -274,7 +296,7 @@ export function ExamPage() {
           <div>
             <h3>答题卡</h3>
             <p>
-              {totalQuestions} 题 / 合格线 {exam.config.passScorePercent}%
+              {totalQuestions} 题 / 合格线 {effectiveExam.config.passScorePercent}%
             </p>
           </div>
         </div>
@@ -290,7 +312,7 @@ export function ExamPage() {
           </section>
         ) : null}
         <div className="sheet-grid" aria-label="答题卡">
-          {exam.questions.map((question, index) => {
+          {effectiveExam.questions.map((question, index) => {
             const number = index + 1;
             const className = [
               answers[question.id]?.length ? "done" : "",
@@ -345,7 +367,7 @@ export function ExamPage() {
           <button className="primary-button restart-exam-button" type="button" onClick={restartExam}>
             重新模拟考
           </button>
-        ) : viewState === "confirming" ? (
+        ) : effectiveViewState === "confirming" ? (
           <div className="submit-confirmation" role="alert">
             <strong>
               <AlertTriangle aria-hidden="true" size={17} />
@@ -374,8 +396,33 @@ export function ExamPage() {
   );
 }
 
+const StableHtml = memo(function StableHtml({ className, html }: { className: string; html: string }) {
+  return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+});
+
 function selectExamToOpen(items: ExamListResponse["items"]) {
   return items.find((item) => item.status === "in_progress") ?? items.find((item) => item.status === "submitted") ?? null;
+}
+
+async function loadInitialExam(examId: string | null): Promise<ExamDetail | null> {
+  if (examId) {
+    return (await apiClient.get<ExamDetail>(`/exams/${examId}`)) ?? null;
+  }
+
+  const payload = await apiClient.get<ExamListResponse>("/exams");
+  const examToOpen = selectExamToOpen(payload?.items ?? []);
+  if (!examToOpen) {
+    return null;
+  }
+
+  return (await apiClient.get<ExamDetail>(`/exams/${examToOpen.id}`)) ?? null;
+}
+
+function viewStateForExam(nextExam: ExamDetail | null): ExamViewState {
+  if (nextExam === null) {
+    return "unstarted";
+  }
+  return nextExam.status === "submitted" ? "review" : "answering";
 }
 
 function SelectField<TValue extends Subject | Language | Level>({

@@ -1,8 +1,10 @@
 import { CheckCircle2, ChevronLeft, ChevronRight, CircleAlert } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { motion } from "motion/react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { PracticeSubmitResponse, QuestionDetail, QuestionListItem, QuestionListResponse, ReciteQuestionDetail } from "../api/types";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import {
   getLanguageLabel,
   getLevelLabel,
@@ -11,6 +13,7 @@ import {
   type Level,
   type Subject
 } from "../domain/labels";
+import { invalidateStaleResource, useStaleResource } from "../hooks/useStaleResource";
 
 type BackQuestionMode = "practice" | "recite";
 
@@ -25,16 +28,28 @@ interface PracticeQuestionState {
 
 export function PracticePage() {
   const [searchParams] = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const initialMode = searchParams.get("mode") === "recite" ? "recite" : "practice";
   const [mode, setMode] = useState<BackQuestionMode>(initialMode);
-  const [questions, setQuestions] = useState<QuestionListItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [detail, setDetail] = useState<QuestionDetail | ReciteQuestionDetail | null>(null);
   const [practiceStateByQuestionId, setPracticeStateByQuestionId] = useState<Record<string, PracticeQuestionState>>({});
-  const [status, setStatus] = useState<"loading" | "ready" | "empty" | "error">("loading");
-  const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const questionId = searchParams.get("questionId");
+  const questionsResource = useStaleResource<QuestionListItem[]>({
+    key: `/questions?${practiceQuestionSearchParams(searchParams).toString()}`,
+    enabled: questionId === null,
+    load: () => fetchAllQuestions(searchParams)
+  });
+  const questions = questionId === null ? questionsResource.data ?? [] : [];
   const currentQuestionId = questionId ?? questions[currentIndex]?.id ?? null;
+  const detailResource = useStaleResource<QuestionDetail | ReciteQuestionDetail | null>({
+    key: currentQuestionId === null ? "/questions:none" : `/questions/${currentQuestionId}${mode === "recite" ? "/recite" : ""}`,
+    enabled: currentQuestionId !== null,
+    load: async () =>
+      currentQuestionId === null
+        ? null
+        : (await apiClient.get<QuestionDetail | ReciteQuestionDetail>(`/questions/${currentQuestionId}${mode === "recite" ? "/recite" : ""}`)) ?? null
+  });
+  const detail = detailResource.data ?? null;
   const currentPracticeState = currentQuestionId ? practiceStateByQuestionId[currentQuestionId] : undefined;
   const selectedKeys = mode === "recite" && isReciteDetail(detail) ? detail.correctAnswers : currentPracticeState?.selectedKeys ?? [];
   const activeSubmission = currentPracticeState?.isDirty ? null : currentPracticeState?.submission ?? null;
@@ -46,69 +61,8 @@ export function PracticePage() {
   const canNavigateSequence = questionId === null && questions.length > 1;
 
   useEffect(() => {
-    let isMounted = true;
-    setStatus("loading");
-    setQuestions([]);
     setCurrentIndex(0);
-
-    if (questionId) {
-      setStatus("ready");
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    fetchAllQuestions(searchParams)
-      .then((items) => {
-        if (!isMounted) {
-          return;
-        }
-        setQuestions(items);
-        setStatus(items.length === 0 ? "empty" : "ready");
-      })
-      .catch(() => {
-        if (!isMounted) {
-          return;
-        }
-        setStatus("error");
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [questionId, searchParams]);
-
-  useEffect(() => {
-    if (currentQuestionId === null) {
-      setDetail(null);
-      setDetailStatus("idle");
-      return;
-    }
-
-    let isMounted = true;
-    setDetailStatus("loading");
-
-    apiClient
-      .get<QuestionDetail | ReciteQuestionDetail>(`/questions/${currentQuestionId}${mode === "recite" ? "/recite" : ""}`)
-      .then((payload) => {
-        if (!isMounted) {
-          return;
-        }
-        setDetail(payload ?? null);
-        setDetailStatus("ready");
-      })
-      .catch(() => {
-        if (!isMounted) {
-          return;
-        }
-        setDetail(null);
-        setDetailStatus("error");
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentQuestionId, mode]);
+  }, [questionId, searchParamsKey]);
 
   const progressLabel = useMemo(() => {
     if (questionId) {
@@ -175,6 +129,10 @@ export function PracticePage() {
           isSubmitting: false
         }
       }));
+      invalidateStaleResource("/dashboard");
+      invalidateStaleResource("/review");
+      invalidateStaleResource("/admin/stats");
+      invalidateStaleResource("/questions");
     } catch (error) {
       setPracticeStateByQuestionId((current) => ({
         ...current,
@@ -229,14 +187,17 @@ export function PracticePage() {
     if (!canNavigateSequence) {
       return;
     }
-    setCurrentIndex(((nextIndex % questions.length) + questions.length) % questions.length);
+    setCurrentIndex(Math.min(Math.max(nextIndex, 0), questions.length - 1));
   }
 
-  if (status === "loading" || detailStatus === "loading") {
-    return <section className="panel">正在加载真实题目...</section>;
+  if (questionsResource.isInitialLoading || (detailResource.isInitialLoading && detail === null)) {
+    return <LoadingSkeleton variant="practice" />;
   }
 
-  if (status === "error" || detailStatus === "error") {
+  if (
+    (questionsResource.error && questionsResource.data === undefined && questionId === null) ||
+    (detailResource.error && detailResource.data === undefined)
+  ) {
     return (
       <section className="panel" role="alert">
         练习数据加载失败，请稍后重试。
@@ -244,13 +205,13 @@ export function PracticePage() {
     );
   }
 
-  if (status === "empty" || detail === null) {
+  if ((questionId === null && questionsResource.data !== undefined && questions.length === 0) || detail === null) {
     return <section className="panel">当前筛选条件下暂无已发布题目。</section>;
   }
 
   return (
     <div className="practice-shell">
-      <section className="practice-main panel">
+      <section className="practice-main panel" aria-busy={detailResource.isRefreshing}>
         <div className="panel-heading compact practice-mode-heading">
           <div className="segmented" role="tablist" aria-label="练习模式">
             <button className={mode === "practice" ? "active" : ""} type="button" onClick={() => setMode("practice")}>
@@ -268,7 +229,7 @@ export function PracticePage() {
           <span>{sourceText}</span>
           <strong>{progressLabel}</strong>
         </div>
-        <div className="markdown-preview-body practice-stem" dangerouslySetInnerHTML={{ __html: detail.stemHtml }} />
+        <StableHtml className="markdown-preview-body practice-stem" html={detail.stemHtml} />
         <div className={detail.source.type === "multiple" ? "options multi" : "options"} role="group" aria-label="答案选项">
           {detail.options.map((option) => {
             const selected = selectedKeys.includes(option.key);
@@ -283,17 +244,19 @@ export function PracticePage() {
               .join(" ");
 
             return (
-              <button
+              <motion.button
                 aria-label={getOptionLabel(option.key, option.text, selected, submitted, correct)}
                 aria-pressed={selected}
                 className={className}
                 type="button"
+                whileHover={{ x: 3 }}
+                whileTap={{ scale: 0.992 }}
                 onClick={() => toggleAnswer(option.key)}
                 key={option.key}
               >
                 <span>{option.key}</span>
                 {option.text}
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -317,7 +280,14 @@ export function PracticePage() {
         ) : null}
         {mode === "practice" && currentPracticeState?.isDirty ? <p className="practice-resubmit-note">已修改答案，可重新提交</p> : null}
         {submitted ? (
-          <div className={`answer-panel ${isCorrect || mode === "recite" ? "result-correct" : "result-wrong"}`} role="status" aria-live="polite">
+          <motion.div
+            className={`answer-panel ${isCorrect || mode === "recite" ? "result-correct" : "result-wrong"}`}
+            role="status"
+            aria-live="polite"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+          >
             <strong>
               {isCorrect || mode === "recite" ? <CheckCircle2 aria-hidden="true" size={17} /> : <CircleAlert aria-hidden="true" size={17} />}
               {mode === "recite" ? "答案与解析" : isCorrect ? "回答正确" : "回答错误"}
@@ -327,7 +297,7 @@ export function PracticePage() {
               className="markdown-preview-body"
               dangerouslySetInnerHTML={{ __html: mode === "recite" && isReciteDetail(detail) ? detail.explanationHtml : markdownParagraph(activeSubmission?.explanationMd ?? detail.explanationHtml) }}
             />
-          </div>
+          </motion.div>
         ) : null}
         {mode === "recite" && canNavigateSequence ? (
           <div className="practice-actions">
@@ -372,6 +342,10 @@ export function PracticePage() {
   );
 }
 
+const StableHtml = memo(function StableHtml({ className, html }: { className: string; html: string }) {
+  return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+});
+
 async function fetchAllQuestions(searchParams: URLSearchParams): Promise<QuestionListItem[]> {
   const firstPage = await fetchQuestionPage(searchParams, 1);
   const pageCount = Math.ceil(firstPage.total / PAGE_SIZE);
@@ -383,6 +357,15 @@ async function fetchAllQuestions(searchParams: URLSearchParams): Promise<Questio
 }
 
 async function fetchQuestionPage(searchParams: URLSearchParams, page: number): Promise<QuestionListResponse> {
+  const params = practiceQuestionSearchParams(searchParams);
+  params.set("page", String(page));
+  params.set("pageSize", String(PAGE_SIZE));
+
+  const payload = await apiClient.get<QuestionListResponse>(`/questions?${params.toString()}`);
+  return payload ?? { items: [], page, pageSize: PAGE_SIZE, total: 0 };
+}
+
+function practiceQuestionSearchParams(searchParams: URLSearchParams): URLSearchParams {
   const params = new URLSearchParams(searchParams);
   params.delete("mode");
   params.delete("questionId");
@@ -390,11 +373,9 @@ async function fetchQuestionPage(searchParams: URLSearchParams, page: number): P
   if (!params.has("language")) params.set("language", "java");
   if (!params.has("level")) params.set("level", "working");
   if (!params.has("type")) params.set("type", "single");
-  params.set("page", String(page));
+  params.set("page", "1");
   params.set("pageSize", String(PAGE_SIZE));
-
-  const payload = await apiClient.get<QuestionListResponse>(`/questions?${params.toString()}`);
-  return payload ?? { items: [], page, pageSize: PAGE_SIZE, total: 0 };
+  return params;
 }
 
 function isReciteDetail(detail: QuestionDetail | ReciteQuestionDetail | null): detail is ReciteQuestionDetail {

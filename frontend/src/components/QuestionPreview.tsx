@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { QuestionDetail } from "../api/types";
 import { getLanguageLabel, getLevelLabel, getQuestionTypeLabel, getSubjectLabel, type Language, type Level, type QuestionType, type Subject } from "../domain/labels";
 import { BookmarkStateIcon } from "./BookmarkStateIcon";
+import { LoadingSkeleton } from "./LoadingSkeleton";
 
 export interface QuestionPreviewProps {
   detail?: QuestionDetail | null;
@@ -14,12 +15,7 @@ export interface QuestionPreviewProps {
 
 export function QuestionPreview({ detail, loading = false, isBookmarked = false, isBookmarking = false, onToggleBookmark }: QuestionPreviewProps) {
   if (loading) {
-    return (
-      <aside className="detail-panel panel question-preview-card" aria-label="题目预览">
-        <h2>题目预览</h2>
-        <p>正在加载选中题目...</p>
-      </aside>
-    );
+    return <LoadingSkeleton variant="question-preview" />;
   }
 
   if (!detail) {

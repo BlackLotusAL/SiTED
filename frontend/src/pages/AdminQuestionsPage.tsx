@@ -1,4 +1,5 @@
 import { AlertCircle, CheckCircle2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../api/client";
 import { MarkdownEditor, MarkdownPreview } from "../components/MarkdownEditor";
@@ -310,10 +311,16 @@ function StatusToast({ toast }: { toast: ToastState }) {
   const Icon = toast.tone === "error" ? AlertCircle : CheckCircle2;
   return (
     <div className="toast-region">
-      <div className={`status-toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>
+      <motion.div
+        className={`status-toast ${toast.tone}`}
+        role={toast.tone === "error" ? "alert" : "status"}
+        initial={{ opacity: 0, y: -10, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+      >
         <Icon aria-hidden="true" size={17} />
         <span>{toast.message}</span>
-      </div>
+      </motion.div>
     </div>
   );
 }

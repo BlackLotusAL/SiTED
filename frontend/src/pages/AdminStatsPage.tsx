@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { apiClient } from "../api/client";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import { StatsPanel } from "../components/StatsPanel";
 import { TrendChart, type TrendChartPoint } from "../components/TrendChart";
 import { getSubjectLabel, type Subject } from "../domain/labels";
+import { useStaleResource } from "../hooks/useStaleResource";
 
 interface AdminStatsResponse {
   questions: {
@@ -36,34 +38,13 @@ interface TrendResponsePoint {
 }
 
 export function AdminStatsPage() {
-  const [stats, setStats] = useState<AdminStatsResponse | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const statsResource = useStaleResource<AdminStatsResponse | null>({
+    key: "/admin/stats",
+    load: async () => (await apiClient.get<AdminStatsResponse>("/admin/stats")) ?? null
+  });
+  const viewModel = useMemo(() => (statsResource.data ? toViewModel(statsResource.data) : null), [statsResource.data]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    apiClient
-      .get<AdminStatsResponse>("/admin/stats")
-      .then((response) => {
-        if (!cancelled) {
-          setStats(response ?? null);
-          setLoadError(response === undefined);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLoadError(true);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const viewModel = useMemo(() => (stats ? toViewModel(stats) : null), [stats]);
-
-  if (loadError) {
+  if ((statsResource.error && statsResource.data === undefined) || statsResource.data === null) {
     return (
       <section className="panel" role="alert">
         运营数据加载失败，请稍后重试。
@@ -72,15 +53,12 @@ export function AdminStatsPage() {
   }
 
   if (viewModel === null) {
-    return (
-      <section className="panel" aria-busy="true">
-        运营数据加载中...
-      </section>
-    );
+    return <LoadingSkeleton variant="stats" />;
   }
 
   return (
     <>
+      {statsResource.error ? <p className="status-message error">运营数据刷新失败，已保留上次成功数据。</p> : null}
       <div className="stats-kpis">
         <MetricCard label="当前题库数量" value={viewModel.questionTotal} note={`已发布 ${viewModel.publishedQuestions}`} />
         <MetricCard className="accent-blue" label="今日访问用户" value={viewModel.todayVisitors} note={viewModel.visitorDeltaNote} />
