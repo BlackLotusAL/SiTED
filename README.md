@@ -25,7 +25,7 @@
 </div>
 
 <div align="center">
-  <img src="docs/images/sited-overview-preview.png" alt="SiTED 网页示例图" width="92%" />
+  <img src="docs/images/sited-overview-preview-reveal.svg" alt="SiTED 网页示例图" width="92%" />
 </div>
 
 ---
