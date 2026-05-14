@@ -1,5 +1,9 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { DbService } from "../db/db.service";
+import { isUniqueViolation } from "../db/query-helpers";
+import { auditLogs, questions } from "../db/schema";
+import type { InputJsonValue, JsonValue } from "../db/json";
 import type { Role } from "../domain/constants";
 import {
   isValidLanguage,
@@ -8,7 +12,6 @@ import {
   isValidQuestionType,
   isValidSubject
 } from "../domain/validation";
-import { PrismaService } from "../prisma/prisma.service";
 import { normalizeQuestionInput, validateQuestionInput, type NormalizedQuestionInput } from "../questions/question-validator";
 
 export interface ImportBatch {
@@ -29,7 +32,7 @@ export interface ImportActor {
 
 @Injectable()
 export class ImportExportService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(@Inject(DbService) private readonly db: DbService) {}
 
   async validateImport(input: unknown) {
     const errors: ImportError[] = [];
@@ -92,29 +95,26 @@ export class ImportExportService {
     const sourceRows = collectSourceRows(batch.questions);
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      await this.db.client.transaction(async (tx) => {
         for (const question of normalized) {
-          await tx.question.create({
-            data: {
+          await tx.insert(questions).values({
               ...this.toQuestionData(question),
               createdByIp: actor.actorIp,
-              status: "draft"
-            }
+            status: "draft",
+            updatedAt: new Date()
           });
         }
 
-        await tx.auditLog.create({
-          data: {
+        await tx.insert(auditLogs).values({
             actorIp: actor.actorIp,
             role: actor.role,
             action: "question_import",
             target: "questions",
             detail: { importedCount: normalized.length }
-          }
         });
       });
     } catch (error) {
-      if (isPrismaErrorCode(error, "P2002")) {
+      if (isUniqueViolation(error)) {
         const existingSourceCodes = await this.findExistingSourceCodes([...sourceRows.keys()]);
         const conflicts = existingSourceCodes.size > 0 ? [...existingSourceCodes] : [...sourceRows.keys()];
         const errors = conflicts.flatMap((sourceCode) =>
@@ -140,46 +140,47 @@ export class ImportExportService {
   }
 
   async exportQuestions(query: { subject?: string; language?: string; level?: string; type?: string; status?: string }) {
-    const where: Prisma.QuestionWhereInput = {};
+    const filters: SQL[] = [];
     if (query.subject !== undefined) {
       if (!isValidSubject(query.subject)) {
         throw invalidFilter("subject");
       }
-      where.subject = query.subject;
+      filters.push(eq(questions.subject, query.subject));
     }
     if (query.language !== undefined) {
       if (!isValidLanguage(query.language)) {
         throw invalidFilter("language");
       }
-      where.language = query.language;
+      filters.push(eq(questions.language, query.language));
     }
     if (query.level !== undefined) {
       if (!isValidLevel(query.level)) {
         throw invalidFilter("level");
       }
-      where.level = query.level;
+      filters.push(eq(questions.level, query.level));
     }
     if (query.type !== undefined) {
       if (!isValidQuestionType(query.type)) {
         throw invalidFilter("type");
       }
-      where.type = query.type;
+      filters.push(eq(questions.type, query.type));
     }
     if (query.status !== undefined) {
       if (!isValidQuestionStatus(query.status)) {
         throw invalidFilter("status");
       }
-      where.status = query.status;
+      filters.push(eq(questions.status, query.status));
     }
 
-    const questions = await this.prisma.question.findMany({
-      where,
-      orderBy: { updatedAt: "desc" }
-    });
+    const rows = await this.db.client
+      .select()
+      .from(questions)
+      .where(filters.length > 0 ? and(...filters) : undefined)
+      .orderBy(desc(questions.updatedAt));
 
     return {
       version: "1.0",
-      questions: questions.map((question) => ({
+      questions: rows.map((question) => ({
         sourceCode: question.sourceCode ?? undefined,
         subject: question.subject,
         language: question.language,
@@ -212,7 +213,7 @@ export class ImportExportService {
     return batch.questions;
   }
 
-  private toQuestionData(question: NormalizedQuestionInput): Omit<Prisma.QuestionUncheckedCreateInput, "createdByIp"> {
+  private toQuestionData(question: NormalizedQuestionInput) {
     return {
       sourceCode: question.sourceCode,
       subject: question.subject,
@@ -220,7 +221,7 @@ export class ImportExportService {
       level: question.level,
       type: question.type,
       stemMd: question.stemMd,
-      options: question.options as unknown as Prisma.InputJsonValue,
+      options: question.options as unknown as InputJsonValue,
       correctAnswers: question.correctAnswers,
       explanationMd: question.explanationMd,
       memo: question.memo,
@@ -234,10 +235,10 @@ export class ImportExportService {
       return new Set();
     }
 
-    const existing = await this.prisma.question.findMany({
-      where: { sourceCode: { in: sourceCodes } },
-      select: { sourceCode: true }
-    });
+    const existing = await this.db.client
+      .select({ sourceCode: questions.sourceCode })
+      .from(questions)
+      .where(inArray(questions.sourceCode, sourceCodes));
 
     return new Set(existing.map((question) => question.sourceCode).filter((sourceCode): sourceCode is string => sourceCode !== null));
   }
@@ -262,7 +263,7 @@ function collectSourceRows(questions: unknown[]): Map<string, number[]> {
   return sourceRows;
 }
 
-function exportOptions(options: Prisma.JsonValue, correctAnswers: string[]) {
+function exportOptions(options: JsonValue, correctAnswers: string[]) {
   if (!Array.isArray(options)) {
     return [];
   }
@@ -284,8 +285,4 @@ function invalidFilter(field: string): BadRequestException {
     code: "INVALID_EXPORT_FILTER",
     message: `Invalid export filter: ${field}`
   });
-}
-
-function isPrismaErrorCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === code;
 }

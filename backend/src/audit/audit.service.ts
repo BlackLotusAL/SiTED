@@ -1,7 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
 import type { Role } from "../domain/constants";
-import { PrismaService } from "../prisma/prisma.service";
+import { DbService } from "../db/db.service";
+import type { DbExecutor } from "../db/query-helpers";
+import { auditLogs } from "../db/schema";
+import type { InputJsonValue } from "../db/json";
 
 export type AuditAction =
   | "ip_role_upsert"
@@ -29,21 +31,21 @@ export interface AuditRecordInput {
   detail?: Record<string, unknown>;
 }
 
-type AuditClient = Pick<PrismaService, "auditLog">;
-
 @Injectable()
 export class AuditService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(@Inject(DbService) private readonly db: DbService) {}
 
-  record(input: AuditRecordInput, client: AuditClient = this.prisma) {
-    return client.auditLog.create({
-      data: {
+  record(input: AuditRecordInput, client: DbExecutor = this.db.client) {
+    return client
+      .insert(auditLogs)
+      .values({
         actorIp: input.actor.ip,
         role: input.actor.role,
-        action: input.action as never,
+        action: input.action,
         target: input.target,
-        detail: input.detail as Prisma.InputJsonValue | undefined
-      }
-    });
+        detail: input.detail as InputJsonValue | undefined
+      })
+      .returning()
+      .then((rows) => rows[0]);
   }
 }

@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
+import { drizzleMock } from "../testing/drizzle-mock";
 import { ImportExportService } from "./import-export.service";
 
 describe("ImportExportService", () => {
   it("validates every row and reports row-level errors without importing invalid batches", async () => {
-    const prisma = prismaMock();
-    const service = new ImportExportService(prisma as never);
+    const db = drizzleMock({ select: [[], []] });
+    const service = new ImportExportService(db.service as never);
     const batch = {
       version: "1.0",
       questions: [
@@ -37,30 +38,27 @@ describe("ImportExportService", () => {
     await expect(service.commitImport(batch, { actorIp: "10.0.0.5", role: "content_admin" })).rejects.toThrow(
       BadRequestException
     );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(db.client.transaction).not.toHaveBeenCalled();
   });
 
   it("reports existing database sourceCode values as row-level validation errors", async () => {
-    const prisma = prismaMock();
-    prisma.question.findMany.mockResolvedValue([{ sourceCode: "SRC-1" }]);
-    const service = new ImportExportService(prisma as never);
+    const db = drizzleMock({ select: [[{ sourceCode: "SRC-1" }]] });
+    const service = new ImportExportService(db.service as never);
 
     const report = await service.validateImport({ version: "1.0", questions: [validImportQuestion()] });
 
-    expect(prisma.question.findMany).toHaveBeenCalledWith({
-      where: { sourceCode: { in: ["SRC-1"] } },
-      select: { sourceCode: true }
-    });
+    expect(db.client.select).toHaveBeenCalledTimes(1);
     expect(report).toMatchObject({ valid: false, importableCount: 0, failedCount: 1 });
     expect(report.errors).toEqual(expect.arrayContaining([expect.objectContaining({ row: 1, field: "sourceCode" })]));
   });
 
   it("keeps import atomic and maps database unique races to row-level conflict responses", async () => {
-    const prisma = prismaMock();
-    const duplicateError = { code: "P2002", meta: { target: ["sourceCode"] } };
-    prisma.question.create.mockRejectedValue(duplicateError);
-    prisma.question.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ sourceCode: "SRC-1" }]);
-    const service = new ImportExportService(prisma as never);
+    const duplicateError = Object.assign(new Error("duplicate"), { code: "23505" });
+    const db = drizzleMock({
+      select: [[], [{ sourceCode: "SRC-1" }]],
+      insert: [duplicateError]
+    });
+    const service = new ImportExportService(db.service as never);
 
     await expect(
       service.commitImport(
@@ -78,39 +76,41 @@ describe("ImportExportService", () => {
   });
 
   it("imports a valid batch atomically with correctAnswers derived from options", async () => {
-    const prisma = prismaMock();
-    const service = new ImportExportService(prisma as never);
+    const db = drizzleMock({ select: [[]], insert: [[], []] });
+    const service = new ImportExportService(db.service as never);
     const batch = { version: "1.0", questions: [validImportQuestion()] };
 
     const result = await service.commitImport(batch, { actorIp: "10.0.0.5", role: "content_admin" });
 
     expect(result).toEqual({ importedCount: 1 });
-    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
-    expect(prisma.question.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        correctAnswers: ["B"],
-        createdByIp: "10.0.0.5",
-        status: "draft"
-      })
-    });
+    expect(db.client.transaction).toHaveBeenCalledWith(expect.any(Function));
+    const insertBuilder = db.client.insert.mock.results[0].value as { values: jest.Mock };
+    expect(insertBuilder.values).toHaveBeenCalledWith(expect.objectContaining({
+      correctAnswers: ["B"],
+      createdByIp: "10.0.0.5",
+      status: "draft"
+    }));
   });
 
   it("exports the PRD JSON shape and excludes runtime counters and audit metadata", async () => {
-    const prisma = prismaMock();
-    prisma.question.findMany.mockResolvedValue([
-      {
-        ...validImportQuestion(),
-        id: "q1",
-        correctAnswers: ["B"],
-        totalAttempts: 10,
-        correctAttempts: 8,
-        createdByIp: "10.0.0.5",
-        createdAt: new Date("2026-05-03T00:00:00.000Z"),
-        updatedAt: new Date("2026-05-03T00:00:00.000Z"),
-        status: "published"
-      }
-    ]);
-    const service = new ImportExportService(prisma as never);
+    const db = drizzleMock({
+      select: [
+        [
+          {
+            ...validImportQuestion(),
+            id: "q1",
+            correctAnswers: ["B"],
+            totalAttempts: 10,
+            correctAttempts: 8,
+            createdByIp: "10.0.0.5",
+            createdAt: new Date("2026-05-03T00:00:00.000Z"),
+            updatedAt: new Date("2026-05-03T00:00:00.000Z"),
+            status: "published"
+          }
+        ]
+      ]
+    });
+    const service = new ImportExportService(db.service as never);
 
     const exported = await service.exportQuestions({ subject: "programming", status: "published" });
 
@@ -131,12 +131,12 @@ describe("ImportExportService", () => {
     );
   });
 
-  it("rejects invalid export filters before calling Prisma", async () => {
-    const prisma = prismaMock();
-    const service = new ImportExportService(prisma as never);
+  it("rejects invalid export filters before calling the database", async () => {
+    const db = drizzleMock();
+    const service = new ImportExportService(db.service as never);
 
     await expect(service.exportQuestions({ subject: "bad-subject" })).rejects.toThrow(BadRequestException);
-    expect(prisma.question.findMany).not.toHaveBeenCalled();
+    expect(db.client.select).not.toHaveBeenCalled();
   });
 });
 
@@ -157,22 +157,4 @@ function validImportQuestion(overrides: Record<string, unknown> = {}) {
     memo: "Concurrent prefix",
     ...overrides
   };
-}
-
-function prismaMock() {
-  const prisma: {
-    question: { create: jest.Mock; findMany: jest.Mock };
-    auditLog: { create: jest.Mock };
-    $transaction: jest.Mock;
-  } = {
-    question: {
-      create: jest.fn().mockResolvedValue({}),
-      findMany: jest.fn().mockResolvedValue([])
-    },
-    auditLog: {
-      create: jest.fn().mockResolvedValue({})
-    },
-    $transaction: jest.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma))
-  };
-  return prisma;
 }

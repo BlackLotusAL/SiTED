@@ -16,11 +16,9 @@
     "pr:github": "powershell -ExecutionPolicy Bypass -File scripts/github-pr.ps1",
     "pr:github:rebase": "powershell -ExecutionPolicy Bypass -File scripts/github-pr.ps1 -RebaseMerge",
     "e2e": "npm run e2e --workspace frontend",
-    "db:migrate": "node --env-file=.env ./node_modules/prisma/build/index.js migrate dev --schema backend/prisma/schema.prisma",
-    "db:seed": "node --env-file=.env ./node_modules/prisma/build/index.js db seed --schema backend/prisma/schema.prisma"
-  },
-  "prisma": {
-    "seed": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs backend/prisma/seed.ts"
+    "db:generate": "npm run db:generate --workspace backend",
+    "db:migrate": "npm run db:migrate --workspace backend",
+    "db:seed": "npm run db:seed --workspace backend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

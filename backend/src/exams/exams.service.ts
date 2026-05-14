@@ -6,12 +6,15 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { Prisma, type ExamAttempt, type Question } from "@prisma/client";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { AuditService } from "../audit/audit.service";
+import { DbService } from "../db/db.service";
+import { SERIALIZABLE_ISOLATION, type DbExecutor, withSerializableRetry } from "../db/query-helpers";
+import { examAttempts, mistakes, questions, visitors, type ExamAttemptRecord as SchemaExamAttemptRecord, type QuestionRecord } from "../db/schema";
+import type { InputJsonValue, JsonValue } from "../db/json";
 import { QUESTION_TYPES, type Language, type Level, type QuestionType, type Subject } from "../domain/constants";
 import { isCorrectAnswer, isValidSourceCombination } from "../domain/validation";
 import type { RequestIdentity } from "../identity/identity.service";
-import { PrismaService } from "../prisma/prisma.service";
 import { ExamConfigService, type ExamSubjectConfig } from "./exam-config.service";
 
 export interface ExamCreateInput {
@@ -30,7 +33,7 @@ export interface ExamSubmitInput {
 }
 
 type NowProvider = () => Date;
-type TransactionLike = Prisma.TransactionClient;
+type TransactionLike = DbExecutor;
 type AnswerMap = Record<string, string[]>;
 type SourceInput = {
   subject: Subject;
@@ -58,13 +61,13 @@ type QuestionSnapshot = {
   memo: string | null;
   tags: string[];
 };
-type ExamAttemptRecord = Omit<ExamAttempt, "configSnapshot" | "questionSnapshot" | "answers"> & {
-  configSnapshot: Prisma.JsonValue;
-  questionSnapshot: Prisma.JsonValue;
-  answers: Prisma.JsonValue;
+type ExamAttemptRecord = Omit<SchemaExamAttemptRecord, "configSnapshot" | "questionSnapshot" | "answers"> & {
+  configSnapshot: JsonValue;
+  questionSnapshot: JsonValue;
+  answers: JsonValue;
 };
 type ExamListRecord = Pick<
-  ExamAttempt,
+  SchemaExamAttemptRecord,
   "id" | "subject" | "language" | "level" | "status" | "scorePercent" | "isPassed" | "startedAt" | "deadlineAt" | "submittedAt"
 >;
 
@@ -78,36 +81,36 @@ export class ExamsService {
   private readonly audit: AuditService;
 
   constructor(
-    @Inject(PrismaService)
-    private readonly prisma: PrismaService,
+    @Inject(DbService)
+    private readonly db: DbService,
     @Inject(ExamConfigService)
     private readonly configService: ExamConfigService,
     @Inject(EXAM_NOW_PROVIDER) private readonly now: NowProvider,
     @Optional() @Inject(AuditService) audit?: AuditService
   ) {
-    this.audit = audit ?? new AuditService(prisma);
+    this.audit = audit ?? new AuditService(db);
   }
 
   async list(identity: RequestIdentity) {
     return this.withSerializableRetry(async (tx) => {
       const visitor = await this.requireVisitor(tx, identity);
-      const exams = await tx.examAttempt.findMany({
-        where: { visitorId: visitor.id },
-        select: {
-          id: true,
-          subject: true,
-          language: true,
-          level: true,
-          status: true,
-          scorePercent: true,
-          isPassed: true,
-          startedAt: true,
-          deadlineAt: true,
-          submittedAt: true
-        },
-        orderBy: { startedAt: "desc" },
-        take: 100
-      });
+      const exams = await tx
+        .select({
+          id: examAttempts.id,
+          subject: examAttempts.subject,
+          language: examAttempts.language,
+          level: examAttempts.level,
+          status: examAttempts.status,
+          scorePercent: examAttempts.scorePercent,
+          isPassed: examAttempts.isPassed,
+          startedAt: examAttempts.startedAt,
+          deadlineAt: examAttempts.deadlineAt,
+          submittedAt: examAttempts.submittedAt
+        })
+        .from(examAttempts)
+        .where(eq(examAttempts.visitorId, visitor.id))
+        .orderBy(desc(examAttempts.startedAt))
+        .limit(100);
 
       return { items: exams.map(toExamListItem) };
     });
@@ -118,7 +121,7 @@ export class ExamsService {
     try {
       return await this.withSerializableRetry((tx) => this.createInTransaction(tx, normalized, identity));
     } catch (error) {
-      if (!isPrismaUniqueConflict(error)) {
+      if (!isUniqueConflict(error)) {
         throw error;
       }
 
@@ -156,12 +159,13 @@ export class ExamsService {
 
       const questions = parseQuestionSnapshot(exam.questionSnapshot);
       const answers = normalizeAnswersInput(input, questions, parseAnswers(exam.answers));
-      const updated = await tx.examAttempt.update({
-        where: { id },
-        data: { answers }
-      });
+      const [updated] = await tx
+        .update(examAttempts)
+        .set({ answers: answers as InputJsonValue, updatedAt: new Date() })
+        .where(eq(examAttempts.id, id))
+        .returning();
 
-      return this.toExamResponse(updated as ExamAttemptRecord);
+      return this.toExamResponse(requireExam(updated));
     });
   }
 
@@ -194,10 +198,11 @@ export class ExamsService {
         return this.toExamResponse(exam);
       }
 
-      const updated = await tx.examAttempt.update({
-        where: { id },
-        data: { status: "abandoned" }
-      });
+      const [updated] = await tx
+        .update(examAttempts)
+        .set({ status: "abandoned", updatedAt: new Date() })
+        .where(eq(examAttempts.id, id))
+        .returning();
       await this.audit.record(
         {
           actor: { ip: identity.ip, role: identity.role },
@@ -208,7 +213,7 @@ export class ExamsService {
         tx
       );
 
-      return this.toExamResponse(updated as ExamAttemptRecord);
+      return this.toExamResponse(requireExam(updated));
     });
   }
 
@@ -222,7 +227,7 @@ export class ExamsService {
         return this.toExamResponse(activeExam);
       }
       if (activeExam.status === "in_progress") {
-        await tx.examAttempt.update({ where: { id: activeExam.id }, data: { status: "abandoned" } });
+        await tx.update(examAttempts).set({ status: "abandoned", updatedAt: new Date() }).where(eq(examAttempts.id, activeExam.id));
         await this.audit.record(
           {
             actor: { ip: identity.ip, role: identity.role },
@@ -241,42 +246,47 @@ export class ExamsService {
     const deadlineAt = new Date(now.getTime() + config.durationMinutes * 60 * 1000);
     const questionSnapshot = selectedQuestions.map(toQuestionSnapshot);
 
-    const created = await tx.examAttempt.create({
-      data: {
+    const [created] = await tx
+      .insert(examAttempts)
+      .values({
         visitorId: visitor.id,
         subject: normalized.subject,
         language: normalized.language,
         level: normalized.level,
         configSnapshot: configToJson(config),
-        questionSnapshot: questionSnapshot as unknown as Prisma.InputJsonValue,
+        questionSnapshot: questionSnapshot as unknown as InputJsonValue,
         answers: {},
         status: "in_progress",
         startedAt: now,
-        deadlineAt
-      }
-    });
+        deadlineAt,
+        updatedAt: now
+      })
+      .returning();
 
-    return this.toExamResponse(created as ExamAttemptRecord);
+    return this.toExamResponse(requireExam(created));
   }
 
   private async selectQuestions(tx: TransactionLike, source: SourceInput, config: ExamSubjectConfig, visitorId: string) {
-    const pools = new Map<QuestionType, Question[]>();
+    const pools = new Map<QuestionType, QuestionRecord[]>();
     const missing: Array<{ type: QuestionType; required: number; available: number; missing: number }> = [];
 
     for (const type of EXAM_QUESTION_TYPES) {
       const required = config.questionCounts[type];
-      const questions = await tx.question.findMany({
-        where: {
-          status: "published",
-          subject: source.subject,
-          language: source.language,
-          level: source.level,
-          type
-        }
-      });
-      pools.set(type, questions);
-      if (questions.length < required) {
-        missing.push({ type, required, available: questions.length, missing: required - questions.length });
+      const rows = await tx
+        .select()
+        .from(questions)
+        .where(
+          and(
+            eq(questions.status, "published"),
+            eq(questions.subject, source.subject),
+            source.language === null ? isNull(questions.language) : eq(questions.language, source.language),
+            eq(questions.level, source.level),
+            eq(questions.type, type)
+          )
+        );
+      pools.set(type, rows);
+      if (rows.length < required) {
+        missing.push({ type, required, available: rows.length, missing: required - rows.length });
       }
     }
 
@@ -295,31 +305,30 @@ export class ExamsService {
   }
 
   private async requireVisitor(tx: TransactionLike, identity: RequestIdentity): Promise<{ id: string }> {
-    const visitor = await tx.visitor.findUnique({ where: { ip: identity.ip }, select: { id: true } });
-    if (visitor === null) {
+    const [visitor] = await tx.select({ id: visitors.id }).from(visitors).where(eq(visitors.ip, identity.ip)).limit(1);
+    if (visitor === undefined) {
       throw new InternalServerErrorException({ code: "VISITOR_NOT_FOUND", message: "Request visitor was not found" });
     }
     return visitor;
   }
 
   private async findVisitorExam(tx: TransactionLike, id: string, visitorId: string): Promise<ExamAttemptRecord> {
-    const exam = await tx.examAttempt.findUnique({ where: { id } });
-    if (exam === null || exam.visitorId !== visitorId) {
+    const [exam] = await tx.select().from(examAttempts).where(eq(examAttempts.id, id)).limit(1);
+    if (exam === undefined || exam.visitorId !== visitorId) {
       throw new NotFoundException({ code: "EXAM_NOT_FOUND", message: "Exam was not found" });
     }
     return exam as ExamAttemptRecord;
   }
 
   private async findActiveExam(tx: TransactionLike, visitorId: string): Promise<ExamAttemptRecord | null> {
-    const active = await tx.examAttempt.findFirst({
-      where: {
-        visitorId,
-        status: "in_progress"
-      },
-      orderBy: { startedAt: "desc" }
-    });
+    const [active] = await tx
+      .select()
+      .from(examAttempts)
+      .where(and(eq(examAttempts.visitorId, visitorId), eq(examAttempts.status, "in_progress")))
+      .orderBy(desc(examAttempts.startedAt))
+      .limit(1);
 
-    return active === null ? null : (active as ExamAttemptRecord);
+    return active === undefined ? null : (active as ExamAttemptRecord);
   }
 
   private async submitExpiredExamIfNeeded(
@@ -352,58 +361,54 @@ export class ExamsService {
 
     for (const result of results) {
       if (!result.isCorrect) {
-        await tx.mistake.upsert({
-          where: { visitorId_questionId: { visitorId, questionId: result.question.id } },
-          create: {
+        await tx
+          .insert(mistakes)
+          .values({
             visitorId,
             questionId: result.question.id,
             wrongCount: 1,
             consecutiveCorrectCount: 0,
             isMastered: false,
             lastWrongAt: submittedAt,
-            masteredAt: null
-          },
-          update: {
-            wrongCount: { increment: 1 },
-            consecutiveCorrectCount: 0,
-            isMastered: false,
-            lastWrongAt: submittedAt,
-            masteredAt: null
-          }
-        });
+            masteredAt: null,
+            updatedAt: submittedAt
+          })
+          .onConflictDoUpdate({
+            target: [mistakes.visitorId, mistakes.questionId],
+            set: {
+              wrongCount: sql`${mistakes.wrongCount} + 1`,
+              consecutiveCorrectCount: 0,
+              isMastered: false,
+              lastWrongAt: submittedAt,
+              masteredAt: null,
+              updatedAt: submittedAt
+            }
+          });
       }
     }
 
-    const updated = await tx.examAttempt.update({
-      where: { id: exam.id },
-      data: {
-        answers,
+    const [updated] = await tx
+      .update(examAttempts)
+      .set({
+        answers: answers as InputJsonValue,
         status: "submitted",
-        scorePercent: new Prisma.Decimal(scorePercent.toFixed(2)),
+        scorePercent: scorePercent.toFixed(2),
         isPassed: scorePercent >= config.passScorePercent,
-        submittedAt
-      }
-    });
+        submittedAt,
+        updatedAt: submittedAt
+      })
+      .where(eq(examAttempts.id, exam.id))
+      .returning();
 
-    return updated as ExamAttemptRecord;
+    return requireExam(updated);
   }
 
   private async withSerializableRetry<T>(operation: (tx: TransactionLike) => Promise<T>): Promise<T> {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        return await this.prisma.$transaction((tx) => operation(tx), {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable
-        });
-      } catch (error) {
-        if (!isSerializableConflict(error)) {
-          throw error;
-        }
-        lastError = error;
-      }
-    }
-
-    throw lastError;
+    return withSerializableRetry(() =>
+      this.db.client.transaction((tx) => operation(tx), {
+        isolationLevel: SERIALIZABLE_ISOLATION
+      })
+    );
   }
 
   private toExamResponse(exam: ExamAttemptRecord) {
@@ -505,7 +510,7 @@ function normalizeAnswersInput(
   return normalized;
 }
 
-function parseAnswers(value: Prisma.JsonValue): AnswerMap {
+function parseAnswers(value: JsonValue): AnswerMap {
   if (!isRecord(value)) {
     return {};
   }
@@ -519,7 +524,7 @@ function parseAnswers(value: Prisma.JsonValue): AnswerMap {
   return answers;
 }
 
-function parseConfigSnapshot(value: Prisma.JsonValue): ExamSubjectConfig {
+function parseConfigSnapshot(value: JsonValue): ExamSubjectConfig {
   if (
     !isRecord(value) ||
     typeof value.durationMinutes !== "number" ||
@@ -540,7 +545,7 @@ function parseConfigSnapshot(value: Prisma.JsonValue): ExamSubjectConfig {
   };
 }
 
-function parseQuestionSnapshot(value: Prisma.JsonValue): QuestionSnapshot[] {
+function parseQuestionSnapshot(value: JsonValue): QuestionSnapshot[] {
   if (!Array.isArray(value)) {
     throw new InternalServerErrorException({ code: "EXAM_SNAPSHOT_INVALID", message: "Exam question snapshot is invalid" });
   }
@@ -592,7 +597,7 @@ function scoreQuestions(questions: QuestionSnapshot[], answers: AnswerMap) {
   });
 }
 
-function toQuestionSnapshot(question: Question): QuestionSnapshot {
+function toQuestionSnapshot(question: QuestionRecord): QuestionSnapshot {
   return {
     id: question.id,
     sourceCode: question.sourceCode,
@@ -623,7 +628,7 @@ function toActiveQuestion(question: QuestionSnapshot) {
   };
 }
 
-function publicOptions(options: Prisma.JsonValue): QuestionOptionSnapshot[] {
+function publicOptions(options: JsonValue): QuestionOptionSnapshot[] {
   if (!Array.isArray(options)) {
     return [];
   }
@@ -637,7 +642,7 @@ function publicOptions(options: Prisma.JsonValue): QuestionOptionSnapshot[] {
     .filter((option): option is QuestionOptionSnapshot => option !== null);
 }
 
-function configToJson(config: ExamSubjectConfig): Prisma.InputJsonValue {
+function configToJson(config: ExamSubjectConfig): InputJsonValue {
   return {
     durationMinutes: config.durationMinutes,
     passScorePercent: config.passScorePercent,
@@ -666,7 +671,7 @@ function percentage(correct: number, total: number): number {
   return total === 0 ? 0 : Math.round((correct / total) * 10000) / 100;
 }
 
-function decimalToNumber(value: ExamAttempt["scorePercent"]): number | null {
+function decimalToNumber(value: SchemaExamAttemptRecord["scorePercent"]): number | null {
   return value === null ? null : Number(value);
 }
 
@@ -685,6 +690,13 @@ function toExamListItem(exam: ExamListRecord) {
   };
 }
 
+function requireExam(exam: SchemaExamAttemptRecord | undefined): ExamAttemptRecord {
+  if (exam === undefined) {
+    throw new NotFoundException({ code: "EXAM_NOT_FOUND", message: "Exam was not found" });
+  }
+  return exam as ExamAttemptRecord;
+}
+
 function numberFromRecord(record: Record<string, unknown>, key: QuestionType): number {
   const value = record[key];
   if (typeof value !== "number") {
@@ -701,12 +713,8 @@ function invalidExamRequest(message: string): BadRequestException {
   return new BadRequestException({ code: "INVALID_EXAM_REQUEST", message });
 }
 
-function isSerializableConflict(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2034";
-}
-
-function isPrismaUniqueConflict(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002";
+function isUniqueConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "23505";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

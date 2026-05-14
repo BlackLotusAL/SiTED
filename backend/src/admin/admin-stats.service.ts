@@ -1,8 +1,9 @@
 import { Inject, Injectable, Optional } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { count, eq, sql, type SQL } from "drizzle-orm";
+import { DbService } from "../db/db.service";
+import { examAttempts, practiceAttempts, questions, visitors } from "../db/schema";
 import type { Subject } from "../domain/constants";
 import { SUBJECTS } from "../domain/constants";
-import { PrismaService } from "../prisma/prisma.service";
 
 type NowProvider = () => Date;
 type TrendPoint = { date: string; count: number };
@@ -15,8 +16,8 @@ export class AdminStatsService {
   private readonly now: NowProvider;
 
   constructor(
-    @Inject(PrismaService)
-    private readonly prisma: PrismaService,
+    @Inject(DbService)
+    private readonly db: DbService,
     @Optional() @Inject(ADMIN_STATS_NOW_PROVIDER) nowProvider?: NowProvider
   ) {
     this.now = nowProvider ?? (() => new Date());
@@ -41,13 +42,13 @@ export class AdminStatsService {
       practiceTrendGroups,
       examTrendGroups
     ] = await Promise.all([
-      this.prisma.question.count(),
-      this.prisma.question.count({ where: { status: "published" } }),
-      this.prisma.question.groupBy({ by: ["subject"], _count: { _all: true } }),
+      this.countRows(questions),
+      this.countRows(questions, eq(questions.status, "published")),
+      this.db.client.select({ subject: questions.subject, count: count() }).from(questions).groupBy(questions.subject),
       this.findLowCorrectRateQuestions(),
-      this.prisma.visitor.count({ where: { lastSeenAt: { gte: todayStart, lt: tomorrowStart } } }),
-      this.prisma.practiceAttempt.count({ where: { createdAt: { gte: todayStart, lt: tomorrowStart } } }),
-      this.prisma.examAttempt.count({ where: { startedAt: { gte: todayStart, lt: tomorrowStart } } }),
+      this.countRows(visitors, sql`${visitors.lastSeenAt} >= ${todayStart} AND ${visitors.lastSeenAt} < ${tomorrowStart}`),
+      this.countRows(practiceAttempts, sql`${practiceAttempts.createdAt} >= ${todayStart} AND ${practiceAttempts.createdAt} < ${tomorrowStart}`),
+      this.countRows(examAttempts, sql`${examAttempts.startedAt} >= ${todayStart} AND ${examAttempts.startedAt} < ${tomorrowStart}`),
       this.trendRows("Visitor", "lastSeenAt", trendStart, trendEnd),
       this.trendRows("PracticeAttempt", "createdAt", trendStart, trendEnd),
       this.trendRows("ExamAttempt", "startedAt", trendStart, trendEnd)
@@ -86,7 +87,7 @@ export class AdminStatsService {
   }
 
   private findLowCorrectRateQuestions() {
-    return this.prisma.$queryRaw<LowCorrectRateQuestion[]>(Prisma.sql`
+    return executeRows<LowCorrectRateQuestion>(this.db.client.execute(sql`
       SELECT
         q.id,
         q."sourceCode",
@@ -105,30 +106,35 @@ export class AdminStatsService {
         COUNT(pa.id) DESC,
         MAX(pa."createdAt") DESC
       LIMIT 10
-    `);
+    `));
   }
 
   private trendRows(table: "Visitor" | "PracticeAttempt" | "ExamAttempt", field: "lastSeenAt" | "createdAt" | "startedAt", start: Date, end: Date) {
-    return this.prisma.$queryRaw<TrendRow[]>(Prisma.sql`
+    return executeRows<TrendRow>(this.db.client.execute(sql`
       SELECT
         to_char(
           date_trunc(
             'day',
-            (${Prisma.raw(`"${field}"`)} AT TIME ZONE 'UTC') AT TIME ZONE ${Prisma.raw(`'${BUSINESS_TIME_ZONE}'`)}
+            (${sql.raw(`"${field}"`)} AT TIME ZONE 'UTC') AT TIME ZONE ${sql.raw(`'${BUSINESS_TIME_ZONE}'`)}
           ),
           'YYYY-MM-DD'
         ) AS date,
         COUNT(*)::int AS count
-      FROM ${Prisma.raw(`"${table}"`)}
-      WHERE ${Prisma.raw(`"${field}"`)} >= ${start} AND ${Prisma.raw(`"${field}"`)} < ${end}
+      FROM ${sql.raw(`"${table}"`)}
+      WHERE ${sql.raw(`"${field}"`)} >= ${start} AND ${sql.raw(`"${field}"`)} < ${end}
       GROUP BY date
       ORDER BY date ASC
-    `);
+    `));
+  }
+
+  private async countRows(table: typeof questions | typeof visitors | typeof practiceAttempts | typeof examAttempts, where?: SQL): Promise<number> {
+    const rows = await this.db.client.select({ value: count() }).from(table).where(where);
+    return rows[0]?.value ?? 0;
   }
 }
 
-function subjectDistribution(groups: Array<{ subject: Subject; _count: { _all: number } }>) {
-  const counts = new Map(groups.map((group) => [group.subject, group._count._all]));
+function subjectDistribution(groups: Array<{ subject: Subject; count: number }>) {
+  const counts = new Map(groups.map((group) => [group.subject, group.count]));
   return SUBJECTS.map((subject) => ({ subject, count: counts.get(subject) ?? 0 }));
 }
 
@@ -181,4 +187,9 @@ function dayKey(date: Date): string {
   const month = String(businessDate.getUTCMonth() + 1).padStart(2, "0");
   const day = String(businessDate.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+async function executeRows<T>(query: Promise<T[] | { rows: T[] }>): Promise<T[]> {
+  const result = await query;
+  return Array.isArray(result) ? result : result.rows;
 }

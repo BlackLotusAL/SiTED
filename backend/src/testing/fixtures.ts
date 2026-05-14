@@ -1,4 +1,5 @@
-import type { AuditAction, Language, Level, Prisma, QuestionStatus, QuestionType, Role, Subject } from "@prisma/client";
+import type { AuditAction, Language, Level, QuestionStatus, QuestionType, Role, Subject } from "../domain/constants";
+import type { JsonObject } from "../db/json";
 
 export const SEED_SOURCE_PREFIX = "SITED-SEED";
 export const SEED_TAG = "seed";
@@ -49,7 +50,7 @@ export const examConfigSnapshot = {
     single: 22,
     multiple: 10
   }
-} satisfies Prisma.InputJsonObject;
+} satisfies JsonObject;
 
 export function buildSeedQuestions(): SeedQuestion[] {
   return [
@@ -111,7 +112,7 @@ export interface SeedAuditLog {
   role: Role;
   action: AuditAction;
   target: string;
-  detail: Prisma.InputJsonObject;
+  detail: JsonObject;
   createdAt: Date;
 }
 
@@ -271,7 +272,7 @@ function examSourceCode(type: QuestionType, index: number): string {
   return `${SEED_SOURCE_PREFIX}-EXAM-JAVA-WORKING-${type.toUpperCase()}-${String(index + 1).padStart(2, "0")}`;
 }
 
-function audit(action: AuditAction, target: string, detail: Prisma.InputJsonObject): SeedAuditLog {
+function audit(action: AuditAction, target: string, detail: JsonObject): SeedAuditLog {
   return {
     actorIp: seedIps.systemAdmin,
     role: "system_admin",

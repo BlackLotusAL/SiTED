@@ -1,12 +1,12 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
-import { PrismaModule } from "../prisma/prisma.module";
+import { DbModule } from "../db/db.module";
 import { IdentityController } from "./identity.controller";
 import { IdentityService } from "./identity.service";
 import { RolesGuard } from "./roles.guard";
 
 @Module({
-  imports: [PrismaModule],
+  imports: [DbModule],
   controllers: [IdentityController],
   providers: [
     IdentityService,

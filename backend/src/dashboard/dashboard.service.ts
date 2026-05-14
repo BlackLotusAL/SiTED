@@ -1,21 +1,26 @@
 import { Inject, Injectable, Optional } from "@nestjs/common";
-import type { ExamAttempt } from "@prisma/client";
+import { and, count, desc, eq, gte, lt } from "drizzle-orm";
+import { DbService } from "../db/db.service";
+import { examAttempts, mistakes, practiceAttempts, questions, visitors, type ExamAttemptRecord } from "../db/schema";
 import { SUBJECTS, type Subject } from "../domain/constants";
 import type { RequestIdentity } from "../identity/identity.service";
-import { PrismaService } from "../prisma/prisma.service";
 
 type NowProvider = () => Date;
 type PracticeAttemptSummary = { isCorrect: boolean };
 type PracticeAttemptDay = { createdAt: Date };
-type CoverageGroup = { subject: Subject; _count: { _all: number } };
+type CoverageGroup = { subject: Subject; count: number };
+type LatestExamRecord = Pick<
+  ExamAttemptRecord,
+  "id" | "subject" | "language" | "level" | "status" | "scorePercent" | "isPassed" | "startedAt" | "submittedAt"
+>;
 
 const HONG_KONG_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 @Injectable()
 export class DashboardService {
   constructor(
-    @Inject(PrismaService)
-    private readonly prisma: PrismaService,
+    @Inject(DbService)
+    private readonly db: DbService,
     @Optional() @Inject("DASHBOARD_NOW_PROVIDER") nowProvider?: NowProvider
   ) {
     this.now = nowProvider ?? (() => new Date());
@@ -26,9 +31,9 @@ export class DashboardService {
   async getSummary(identity: RequestIdentity) {
     const now = this.now();
     const coveragePromise = this.coverage();
-    const visitor = await this.prisma.visitor.findUnique({ where: { ip: identity.ip }, select: { id: true } });
+    const [visitor] = await this.db.client.select({ id: visitors.id }).from(visitors).where(eq(visitors.ip, identity.ip)).limit(1);
 
-    if (visitor === null) {
+    if (visitor === undefined) {
       return {
         today: emptyToday(),
         mistakes: { unmastered: 0 },
@@ -44,36 +49,16 @@ export class DashboardService {
     const nextMonthStart = addBusinessMonthsUtc(monthStart, 1);
 
     const [todayAttempts, unmasteredMistakes, latestExam, monthAttempts, coverage] = await Promise.all([
-      this.prisma.practiceAttempt.findMany({
-        where: {
-          visitorId: visitor.id,
-          createdAt: { gte: todayStart, lt: tomorrowStart }
-        },
-        select: { isCorrect: true }
-      }),
-      this.prisma.mistake.count({ where: { visitorId: visitor.id, isMastered: false } }),
-      this.prisma.examAttempt.findFirst({
-        where: { visitorId: visitor.id },
-        select: {
-          id: true,
-          subject: true,
-          language: true,
-          level: true,
-          status: true,
-          scorePercent: true,
-          isPassed: true,
-          startedAt: true,
-          submittedAt: true
-        },
-        orderBy: { startedAt: "desc" }
-      }),
-      this.prisma.practiceAttempt.findMany({
-        where: {
-          visitorId: visitor.id,
-          createdAt: { gte: monthStart, lt: nextMonthStart }
-        },
-        select: { createdAt: true }
-      }),
+      this.db.client
+        .select({ isCorrect: practiceAttempts.isCorrect })
+        .from(practiceAttempts)
+        .where(and(eq(practiceAttempts.visitorId, visitor.id), gte(practiceAttempts.createdAt, todayStart), lt(practiceAttempts.createdAt, tomorrowStart))),
+      this.countUnmasteredMistakes(visitor.id),
+      this.latestExam(visitor.id),
+      this.db.client
+        .select({ createdAt: practiceAttempts.createdAt })
+        .from(practiceAttempts)
+        .where(and(eq(practiceAttempts.visitorId, visitor.id), gte(practiceAttempts.createdAt, monthStart), lt(practiceAttempts.createdAt, nextMonthStart))),
       coveragePromise
     ]);
 
@@ -87,13 +72,41 @@ export class DashboardService {
   }
 
   private async coverage() {
-    const groups = await this.prisma.question.groupBy({
-      by: ["subject"],
-      where: { status: "published" },
-      _count: { _all: true }
-    });
+    const groups = await this.db.client
+      .select({ subject: questions.subject, count: count() })
+      .from(questions)
+      .where(eq(questions.status, "published"))
+      .groupBy(questions.subject);
 
-    return coverageFromGroups(groups as CoverageGroup[]);
+    return coverageFromGroups(groups);
+  }
+
+  private async countUnmasteredMistakes(visitorId: string): Promise<number> {
+    const rows = await this.db.client
+      .select({ value: count() })
+      .from(mistakes)
+      .where(and(eq(mistakes.visitorId, visitorId), eq(mistakes.isMastered, false)));
+    return rows[0]?.value ?? 0;
+  }
+
+  private async latestExam(visitorId: string): Promise<LatestExamRecord | null> {
+    const [exam] = await this.db.client
+      .select({
+        id: examAttempts.id,
+        subject: examAttempts.subject,
+        language: examAttempts.language,
+        level: examAttempts.level,
+        status: examAttempts.status,
+        scorePercent: examAttempts.scorePercent,
+        isPassed: examAttempts.isPassed,
+        startedAt: examAttempts.startedAt,
+        submittedAt: examAttempts.submittedAt
+      })
+      .from(examAttempts)
+      .where(eq(examAttempts.visitorId, visitorId))
+      .orderBy(desc(examAttempts.startedAt))
+      .limit(1);
+    return exam ?? null;
   }
 }
 
@@ -140,11 +153,11 @@ function calendarForMonth(now: Date, attempts: PracticeAttemptDay[]) {
 }
 
 function coverageFromGroups(groups: CoverageGroup[]) {
-  const counts = new Map(groups.map((group) => [group.subject, group._count._all]));
+  const counts = new Map(groups.map((group) => [group.subject, group.count]));
   return SUBJECTS.map((subject) => ({ subject, count: counts.get(subject) ?? 0 }));
 }
 
-function toLatestExam(exam: Pick<ExamAttempt, "id" | "subject" | "language" | "level" | "status" | "scorePercent" | "isPassed" | "startedAt" | "submittedAt">) {
+function toLatestExam(exam: LatestExamRecord) {
   return {
     id: exam.id,
     subject: exam.subject,

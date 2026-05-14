@@ -5,7 +5,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AppModule } from "../app.module";
-import { PrismaService } from "../prisma/prisma.service";
+import { DbService } from "../db/db.service";
+import { drizzleMock } from "../testing/drizzle-mock";
 import { resolveUploadRoot } from "./uploads.service";
 
 describe("Task 4 real module integration", () => {
@@ -27,8 +28,18 @@ describe("Task 4 real module integration", () => {
   });
 
   it("enforces learner/content_admin/system_admin access through real middleware, guard, and Task 4 controllers", async () => {
-    const learner = await createApp(prismaMock({ bindingRole: null }));
-    const contentAdmin = await createApp(prismaMock({ bindingRole: "content_admin" }));
+    const learner = await createApp(
+      drizzleMock({
+        select: [[], []],
+        insert: [[], []]
+      })
+    );
+    const contentAdmin = await createApp(
+      drizzleMock({
+        select: [[{ role: "content_admin" }], [], [{ value: 0 }], [{ role: "content_admin" }]],
+        insert: [[], [], [{ id: "audit1" }]]
+      })
+    );
 
     try {
       expect((await fetchJson(learner, "/api/admin/questions")).status).toBe(403);
@@ -42,7 +53,12 @@ describe("Task 4 real module integration", () => {
     }
 
     process.env.SYSTEM_ADMIN_IPS = "127.0.0.1";
-    const systemAdmin = await createApp(prismaMock({ bindingRole: null }));
+    const systemAdmin = await createApp(
+      drizzleMock({
+        select: [[], [{ value: 0 }]],
+        insert: [[], [], [{ id: "audit1" }]]
+      })
+    );
     try {
       expect((await fetchJson(systemAdmin, "/api/admin/questions")).status).toBe(200);
       expect((await postUpload(systemAdmin)).status).toBe(201);
@@ -52,7 +68,12 @@ describe("Task 4 real module integration", () => {
   });
 
   it("serves uploaded static files outside the API identity middleware", async () => {
-    const app = await createApp(prismaMock({ bindingRole: "content_admin" }));
+    const app = await createApp(
+      drizzleMock({
+        select: [[{ role: "content_admin" }]],
+        insert: [[], [{ id: "audit1" }]]
+      })
+    );
 
     try {
       const upload = await postUpload(app);
@@ -70,9 +91,12 @@ describe("Task 4 real module integration", () => {
   });
 
   it("maps real admin question not found and sourceCode conflict exceptions through HTTP", async () => {
-    const prisma = prismaMock({ bindingRole: "content_admin" });
-    prisma.question.findUnique.mockResolvedValue(null);
-    let responseApp = await createApp(prisma);
+    let responseApp = await createApp(
+      drizzleMock({
+        select: [[{ role: "content_admin" }], []],
+        insert: [[]]
+      })
+    );
 
     try {
       const notFound = await fetchJson(responseApp, "/api/admin/questions/missing/archive", { method: "POST" });
@@ -82,9 +106,12 @@ describe("Task 4 real module integration", () => {
       await responseApp.close();
     }
 
-    const conflictPrisma = prismaMock({ bindingRole: "content_admin" });
-    conflictPrisma.question.create.mockRejectedValue({ code: "P2002", meta: { target: ["sourceCode"] } });
-    responseApp = await createApp(conflictPrisma);
+    responseApp = await createApp(
+      drizzleMock({
+        select: [[{ role: "content_admin" }]],
+        insert: [[], Object.assign(new Error("duplicate"), { code: "23505" })]
+      })
+    );
 
     try {
       const conflict = await fetchJson(responseApp, "/api/admin/questions", { method: "POST", body: validQuestionInput() });
@@ -96,12 +123,12 @@ describe("Task 4 real module integration", () => {
   });
 });
 
-async function createApp(prisma: ReturnType<typeof prismaMock>): Promise<INestApplication> {
+async function createApp(db: ReturnType<typeof drizzleMock>): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule]
   })
-    .overrideProvider(PrismaService)
-    .useValue(prisma)
+    .overrideProvider(DbService)
+    .useValue(db.service)
     .compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   app.useStaticAssets(resolveUploadRoot(), { prefix: "/uploads/" });
@@ -141,45 +168,6 @@ async function postUpload(app: INestApplication) {
   };
 }
 
-interface PrismaMock {
-  ipRoleBinding: { findUnique: jest.Mock };
-  visitor: { upsert: jest.Mock };
-  question: {
-    findMany: jest.Mock;
-    count: jest.Mock;
-    findFirst: jest.Mock;
-    findUnique: jest.Mock;
-    create: jest.Mock;
-    update: jest.Mock;
-  };
-  auditLog: { create: jest.Mock };
-  $transaction: jest.Mock;
-}
-
-function prismaMock(input: { bindingRole: "content_admin" | null }): PrismaMock {
-  const prisma: PrismaMock = {
-    ipRoleBinding: {
-      findUnique: jest.fn().mockResolvedValue(input.bindingRole === null ? null : { role: input.bindingRole })
-    },
-    visitor: {
-      upsert: jest.fn().mockResolvedValue({})
-    },
-    question: {
-      findMany: jest.fn().mockResolvedValue([]),
-      count: jest.fn().mockResolvedValue(0),
-      findFirst: jest.fn().mockResolvedValue(null),
-      findUnique: jest.fn().mockResolvedValue(questionRecord({ status: "draft" })),
-      create: jest.fn().mockImplementation(({ data }) => Promise.resolve(questionRecord({ ...data, id: "created" }))),
-      update: jest.fn().mockImplementation(({ data }) => Promise.resolve(questionRecord({ ...data })))
-    },
-    auditLog: {
-      create: jest.fn().mockResolvedValue({})
-    },
-    $transaction: jest.fn(async (callback: (tx: PrismaMock) => Promise<unknown>) => callback(prisma))
-  };
-  return prisma;
-}
-
 function validQuestionInput() {
   return {
     sourceCode: "SRC-1",
@@ -195,32 +183,6 @@ function validQuestionInput() {
     ],
     explanationMd: "Explanation",
     memo: "Memo"
-  };
-}
-
-function questionRecord(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "q1",
-    sourceCode: "SRC-1",
-    subject: "programming",
-    language: "java",
-    level: "working",
-    type: "single",
-    stemMd: "Stem",
-    options: [
-      { key: "A", text: "A", isCorrect: false },
-      { key: "B", text: "B", isCorrect: true }
-    ],
-    correctAnswers: ["B"],
-    explanationMd: "Explanation",
-    memo: "Memo",
-    tags: ["collections"],
-    totalAttempts: 0,
-    correctAttempts: 0,
-    status: "draft",
-    createdAt: new Date("2026-05-03T00:00:00.000Z"),
-    updatedAt: new Date("2026-05-03T00:00:00.000Z"),
-    ...overrides
   };
 }
 

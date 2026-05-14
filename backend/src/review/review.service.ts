@@ -1,27 +1,28 @@
 import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import type { ExamAttempt } from "@prisma/client";
+import { and, asc, desc, eq } from "drizzle-orm";
+import { DbService } from "../db/db.service";
+import { bookmarks, examAttempts, mistakes, questions, visitors, type ExamAttemptRecord as SchemaExamAttemptRecord } from "../db/schema";
 import type { RequestIdentity } from "../identity/identity.service";
-import { PrismaService } from "../prisma/prisma.service";
 import { toMasteryStatus } from "../practice/practice.service";
 
 const QUESTION_SUMMARY_SELECT = {
-  id: true,
-  sourceCode: true,
-  subject: true,
-  language: true,
-  level: true,
-  type: true,
-  stemMd: true,
-  memo: true,
-  tags: true,
-  status: true,
-  totalAttempts: true,
-  correctAttempts: true
+  id: questions.id,
+  sourceCode: questions.sourceCode,
+  subject: questions.subject,
+  language: questions.language,
+  level: questions.level,
+  type: questions.type,
+  stemMd: questions.stemMd,
+  memo: questions.memo,
+  tags: questions.tags,
+  status: questions.status,
+  totalAttempts: questions.totalAttempts,
+  correctAttempts: questions.correctAttempts
 } as const;
 
 @Injectable()
 export class ReviewService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(@Inject(DbService) private readonly db: DbService) {}
 
   async listMistakes(identity: RequestIdentity) {
     const visitor = await this.findVisitor(identity);
@@ -29,23 +30,24 @@ export class ReviewService {
       return { items: [] };
     }
 
-    const mistakes = await this.prisma.mistake.findMany({
-      where: { visitorId: visitor.id },
-      select: {
-        id: true,
-        questionId: true,
-        wrongCount: true,
-        consecutiveCorrectCount: true,
-        isMastered: true,
-        lastWrongAt: true,
-        masteredAt: true,
-        question: { select: QUESTION_SUMMARY_SELECT }
-      },
-      orderBy: [{ isMastered: "asc" }, { lastWrongAt: "desc" }, { updatedAt: "desc" }]
-    });
+    const mistakeRows = await this.db.client
+      .select({
+        id: mistakes.id,
+        questionId: mistakes.questionId,
+        wrongCount: mistakes.wrongCount,
+        consecutiveCorrectCount: mistakes.consecutiveCorrectCount,
+        isMastered: mistakes.isMastered,
+        lastWrongAt: mistakes.lastWrongAt,
+        masteredAt: mistakes.masteredAt,
+        question: QUESTION_SUMMARY_SELECT
+      })
+      .from(mistakes)
+      .innerJoin(questions, eq(mistakes.questionId, questions.id))
+      .where(eq(mistakes.visitorId, visitor.id))
+      .orderBy(asc(mistakes.isMastered), desc(mistakes.lastWrongAt), desc(mistakes.updatedAt));
 
     return {
-      items: mistakes.map((mistake) => ({
+      items: mistakeRows.map((mistake) => ({
         id: mistake.id,
         questionId: mistake.questionId,
         wrongCount: mistake.wrongCount,
@@ -65,21 +67,22 @@ export class ReviewService {
       return { items: [] };
     }
 
-    const bookmarks = await this.prisma.bookmark.findMany({
-      where: { visitorId: visitor.id },
-      select: {
-        id: true,
-        questionId: true,
-        note: true,
-        tags: true,
-        createdAt: true,
-        question: { select: QUESTION_SUMMARY_SELECT }
-      },
-      orderBy: { createdAt: "desc" }
-    });
+    const bookmarkRows = await this.db.client
+      .select({
+        id: bookmarks.id,
+        questionId: bookmarks.questionId,
+        note: bookmarks.note,
+        tags: bookmarks.tags,
+        createdAt: bookmarks.createdAt,
+        question: QUESTION_SUMMARY_SELECT
+      })
+      .from(bookmarks)
+      .innerJoin(questions, eq(bookmarks.questionId, questions.id))
+      .where(eq(bookmarks.visitorId, visitor.id))
+      .orderBy(desc(bookmarks.createdAt));
 
     return {
-      items: bookmarks.map((bookmark) => ({
+      items: bookmarkRows.map((bookmark) => ({
         id: bookmark.id,
         questionId: bookmark.questionId,
         note: bookmark.note,
@@ -96,82 +99,94 @@ export class ReviewService {
       return { items: [] };
     }
 
-    const examAttempts = await this.prisma.examAttempt.findMany({
-      where: { visitorId: visitor.id },
-      select: {
-        id: true,
-        subject: true,
-        language: true,
-        level: true,
-        status: true,
-        scorePercent: true,
-        isPassed: true,
-        startedAt: true,
-        deadlineAt: true,
-        submittedAt: true
-      },
-      orderBy: [{ submittedAt: "desc" }, { startedAt: "desc" }],
-      take: 100
-    });
+    const examRows = await this.db.client
+      .select({
+        id: examAttempts.id,
+        subject: examAttempts.subject,
+        language: examAttempts.language,
+        level: examAttempts.level,
+        status: examAttempts.status,
+        scorePercent: examAttempts.scorePercent,
+        isPassed: examAttempts.isPassed,
+        startedAt: examAttempts.startedAt,
+        deadlineAt: examAttempts.deadlineAt,
+        submittedAt: examAttempts.submittedAt
+      })
+      .from(examAttempts)
+      .where(eq(examAttempts.visitorId, visitor.id))
+      .orderBy(desc(examAttempts.submittedAt), desc(examAttempts.startedAt))
+      .limit(100);
 
     return {
-      items: examAttempts.map(toExamRecord).sort((left, right) => recordTime(right) - recordTime(left))
+      items: examRows.map(toExamRecord).sort((left, right) => recordTime(right) - recordTime(left))
     };
   }
 
   async updateMistakeMastery(id: string, input: unknown, identity: RequestIdentity) {
     const isMastered = normalizeMistakeUpdateInput(input);
     const visitor = await this.requireVisitor(identity);
-    const existing = await this.prisma.mistake.findFirst({
-      where: { id, visitorId: visitor.id },
-      select: {
-        id: true,
-        questionId: true,
-        wrongCount: true,
-        consecutiveCorrectCount: true,
-        isMastered: true,
-        lastWrongAt: true,
-        masteredAt: true,
-        question: { select: QUESTION_SUMMARY_SELECT }
-      }
-    });
+    const [existing] = await this.db.client
+      .select({
+        id: mistakes.id,
+        questionId: mistakes.questionId,
+        wrongCount: mistakes.wrongCount,
+        consecutiveCorrectCount: mistakes.consecutiveCorrectCount,
+        isMastered: mistakes.isMastered,
+        lastWrongAt: mistakes.lastWrongAt,
+        masteredAt: mistakes.masteredAt,
+        question: QUESTION_SUMMARY_SELECT
+      })
+      .from(mistakes)
+      .innerJoin(questions, eq(mistakes.questionId, questions.id))
+      .where(and(eq(mistakes.id, id), eq(mistakes.visitorId, visitor.id)))
+      .limit(1);
 
-    if (existing === null) {
+    if (existing === undefined) {
       throw new NotFoundException({ code: "MISTAKE_NOT_FOUND", message: "Mistake was not found" });
     }
 
-    const updated = await this.prisma.mistake.update({
-      where: { id },
-      data: isMastered
-        ? {
+    const [updated] = await this.db.client
+      .update(mistakes)
+      .set(
+        isMastered
+          ? {
             isMastered: true,
             masteredAt: new Date(),
-            consecutiveCorrectCount: Math.max(existing.consecutiveCorrectCount, 3)
+            consecutiveCorrectCount: Math.max(existing.consecutiveCorrectCount, 3),
+            updatedAt: new Date()
           }
-        : { isMastered: false, masteredAt: null, consecutiveCorrectCount: 0 },
-      select: {
-        id: true,
-        questionId: true,
-        wrongCount: true,
-        consecutiveCorrectCount: true,
-        isMastered: true,
-        lastWrongAt: true,
-        masteredAt: true,
-        question: { select: QUESTION_SUMMARY_SELECT }
-      }
-    });
+          : { isMastered: false, masteredAt: null, consecutiveCorrectCount: 0, updatedAt: new Date() }
+      )
+      .where(eq(mistakes.id, id))
+      .returning({
+        id: mistakes.id,
+        questionId: mistakes.questionId,
+        wrongCount: mistakes.wrongCount,
+        consecutiveCorrectCount: mistakes.consecutiveCorrectCount,
+        isMastered: mistakes.isMastered,
+        lastWrongAt: mistakes.lastWrongAt,
+        masteredAt: mistakes.masteredAt
+      });
 
-    return toMistakeItem(updated);
+    return toMistakeItem({ ...requireUpdatedMistake(updated), question: existing.question });
   }
 
   async removeMistake(id: string, identity: RequestIdentity) {
     const visitor = await this.requireVisitor(identity);
-    const result = await this.prisma.mistake.deleteMany({ where: { id, visitorId: visitor.id } });
-    return { deleted: result.count > 0 };
+    const deleted = await this.db.client
+      .delete(mistakes)
+      .where(and(eq(mistakes.id, id), eq(mistakes.visitorId, visitor.id)))
+      .returning({ id: mistakes.id });
+    return { deleted: deleted.length > 0 };
   }
 
   private findVisitor(identity: RequestIdentity): Promise<{ id: string } | null> {
-    return this.prisma.visitor.findUnique({ where: { ip: identity.ip }, select: { id: true } });
+    return this.db.client
+      .select({ id: visitors.id })
+      .from(visitors)
+      .where(eq(visitors.ip, identity.ip))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
   }
 
   private async requireVisitor(identity: RequestIdentity): Promise<{ id: string }> {
@@ -210,7 +225,7 @@ type MistakeRecord = {
 };
 
 type ExamAttemptRecord = Pick<
-  ExamAttempt,
+  SchemaExamAttemptRecord,
   "id" | "subject" | "language" | "level" | "status" | "scorePercent" | "isPassed" | "startedAt" | "deadlineAt" | "submittedAt"
 >;
 
@@ -272,7 +287,7 @@ function correctRate(question: { totalAttempts: number; correctAttempts: number 
   return question.totalAttempts === 0 ? 0 : Math.round((question.correctAttempts / question.totalAttempts) * 100);
 }
 
-function decimalToNumber(value: ExamAttempt["scorePercent"]): number | null {
+function decimalToNumber(value: ExamAttemptRecord["scorePercent"]): number | null {
   return value === null ? null : Number(value);
 }
 
@@ -285,4 +300,11 @@ function normalizeMistakeUpdateInput(input: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireUpdatedMistake<T>(mistake: T | undefined): T {
+  if (mistake === undefined) {
+    throw new NotFoundException({ code: "MISTAKE_NOT_FOUND", message: "Mistake was not found" });
+  }
+  return mistake;
 }
