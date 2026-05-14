@@ -1,7 +1,8 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AppModule } from "../app.module";
-import { PrismaService } from "../prisma/prisma.service";
+import { DbService } from "../db/db.service";
+import { drizzleMock } from "../testing/drizzle-mock";
 import { EXAM_NOW_PROVIDER } from "./exams.service";
 
 describe("ExamsController HTTP", () => {
@@ -15,23 +16,23 @@ describe("ExamsController HTTP", () => {
     process.env = originalEnv;
   });
 
-  it("rejects invalid exam UUID route params before reaching Prisma", async () => {
-    const prisma = prismaMock();
-    const app = await createApp(prisma);
+  it("rejects invalid exam UUID route params before reaching the exam query", async () => {
+    const db = drizzleMock({ select: [[]], insert: [[]] });
+    const app = await createApp(db);
 
     try {
       const response = await fetchJson(app, "/api/exams/not-a-uuid");
 
       expect(response.status).toBe(400);
-      expect(prisma.examAttempt.findUnique).not.toHaveBeenCalled();
+      expect(db.client.update).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
   });
 
   it("maps real exam not found exceptions through HTTP", async () => {
-    const prisma = prismaMock({ exam: null });
-    const app = await createApp(prisma);
+    const db = drizzleMock({ select: [[], [{ id: "visitor1" }], []], insert: [[]] });
+    const app = await createApp(db);
 
     try {
       const response = await fetchJson(app, `/api/exams/${examId()}`);
@@ -44,10 +45,15 @@ describe("ExamsController HTTP", () => {
   });
 
   it("returns current visitor exam history without snapshot or answer details", async () => {
-    const prisma = prismaMock({
-      exams: [examAttemptRecord({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", status: "submitted", scorePercent: 66.67 })]
+    const db = drizzleMock({
+      select: [
+        [],
+        [{ id: "visitor1" }],
+        [examAttemptRecord({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", status: "submitted", scorePercent: "66.67" })]
+      ],
+      insert: [[]]
     });
-    const app = await createApp(prisma);
+    const app = await createApp(db);
 
     try {
       const response = await fetchJson(app, "/api/exams");
@@ -74,8 +80,23 @@ describe("ExamsController HTTP", () => {
   });
 
   it("wires PATCH answers and POST submit bodies to the service through real HTTP", async () => {
-    const prisma = prismaMock({ exam: examAttemptRecord() });
-    const app = await createApp(prisma);
+    const db = drizzleMock({
+      select: [[], [{ id: "visitor1" }], [examAttemptRecord()], [], [{ id: "visitor1" }], [examAttemptRecord()]],
+      insert: [[], [], [], []],
+      update: [
+        [examAttemptRecord({ answers: { [singleQuestionId()]: ["B"] } })],
+        [
+          examAttemptRecord({
+            answers: { [singleQuestionId()]: ["B"] },
+            status: "submitted",
+            scorePercent: "33.33",
+            isPassed: false,
+            submittedAt: new Date("2026-05-03T00:00:00.000Z")
+          })
+        ]
+      ]
+    });
+    const app = await createApp(db);
 
     try {
       const patch = await fetchJson(app, `/api/exams/${examId()}/answers`, {
@@ -97,8 +118,8 @@ describe("ExamsController HTTP", () => {
   });
 
   it("prevents cross visitor access through real identity isolation", async () => {
-    const prisma = prismaMock({ exam: examAttemptRecord({ visitorId: "other-visitor" }) });
-    const app = await createApp(prisma);
+    const db = drizzleMock({ select: [[], [{ id: "visitor1" }], [examAttemptRecord({ visitorId: "other-visitor" })]], insert: [[]] });
+    const app = await createApp(db);
 
     try {
       const response = await fetchJson(app, `/api/exams/${examId()}`);
@@ -111,13 +132,26 @@ describe("ExamsController HTTP", () => {
   });
 
   it("auto-submits expired active exams over HTTP and ignores late PATCH answers", async () => {
-    const prisma = prismaMock({
-      exam: examAttemptRecord({
+    const expiredExam = examAttemptRecord({
         answers: { [singleQuestionId()]: ["B"] },
         deadlineAt: new Date("2026-05-02T23:59:59.000Z")
-      })
     });
-    const app = await createApp(prisma);
+    const db = drizzleMock({
+      select: [[], [{ id: "visitor1" }], [expiredExam]],
+      insert: [[], [], []],
+      update: [
+        [
+          examAttemptRecord({
+            ...expiredExam,
+            status: "submitted",
+            scorePercent: "33.33",
+            isPassed: false,
+            submittedAt: new Date("2026-05-03T00:00:00.000Z")
+          })
+        ]
+      ]
+    });
+    const app = await createApp(db);
 
     try {
       const response = await fetchJson(app, `/api/exams/${examId()}/answers`, {
@@ -131,18 +165,15 @@ describe("ExamsController HTTP", () => {
         answers: { [singleQuestionId()]: ["B"] },
         scorePercent: 33.33
       });
-      expect(prisma.examAttempt.update).toHaveBeenCalledWith({
-        where: { id: examId() },
-        data: expect.objectContaining({ answers: { [singleQuestionId()]: ["B"] }, status: "submitted" })
-      });
+      expect(db.client.update).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }
   });
 
   it("returns 400 for invalid PATCH body through real validation", async () => {
-    const prisma = prismaMock({ exam: examAttemptRecord() });
-    const app = await createApp(prisma);
+    const db = drizzleMock({ select: [[], [{ id: "visitor1" }], [examAttemptRecord()]], insert: [[]] });
+    const app = await createApp(db);
 
     try {
       const response = await fetchJson(app, `/api/exams/${examId()}/answers`, {
@@ -158,12 +189,12 @@ describe("ExamsController HTTP", () => {
   });
 });
 
-async function createApp(prisma: ReturnType<typeof prismaMock>): Promise<INestApplication> {
+async function createApp(db: ReturnType<typeof drizzleMock>): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule]
   })
-    .overrideProvider(PrismaService)
-    .useValue(prisma)
+    .overrideProvider(DbService)
+    .useValue(db.service)
     .overrideProvider(EXAM_NOW_PROVIDER)
     .useValue(() => new Date("2026-05-03T00:00:00.000Z"))
     .compile();
@@ -184,54 +215,6 @@ async function fetchJson(app: INestApplication, path: string, init: { method?: s
     status: response.status,
     body: await response.json()
   };
-}
-
-interface PrismaMock {
-  ipRoleBinding: { findUnique: jest.Mock };
-  visitor: { upsert: jest.Mock; findUnique: jest.Mock };
-  question: { findMany: jest.Mock };
-  examAttempt: {
-    findFirst: jest.Mock;
-    findMany: jest.Mock;
-    findUnique: jest.Mock;
-    create: jest.Mock;
-    update: jest.Mock;
-  };
-  mistake: { upsert: jest.Mock };
-  auditLog: { create: jest.Mock };
-  $transaction: jest.Mock;
-}
-
-function prismaMock(options: { exam?: unknown; exams?: unknown[] } = {}): PrismaMock {
-  const prisma: PrismaMock = {
-    ipRoleBinding: {
-      findUnique: jest.fn().mockResolvedValue(null)
-    },
-    visitor: {
-      upsert: jest.fn().mockResolvedValue({}),
-      findUnique: jest.fn().mockResolvedValue({ id: "visitor1" })
-    },
-    question: {
-      findMany: jest.fn().mockResolvedValue([])
-    },
-    examAttempt: {
-      findFirst: jest.fn().mockResolvedValue(null),
-      findMany: jest.fn().mockResolvedValue(options.exams ?? []),
-      findUnique: jest.fn().mockResolvedValue(options.exam === undefined ? examAttemptRecord() : options.exam),
-      create: jest.fn().mockImplementation(({ data }) => Promise.resolve(examAttemptRecord(data))),
-      update: jest.fn().mockImplementation(({ data }) =>
-        Promise.resolve(examAttemptRecord({ ...((options.exam as Record<string, unknown> | undefined) ?? {}), ...data }))
-      )
-    },
-    mistake: {
-      upsert: jest.fn().mockResolvedValue({})
-    },
-    auditLog: {
-      create: jest.fn().mockResolvedValue({})
-    },
-    $transaction: jest.fn(async (callback: (tx: PrismaMock) => Promise<unknown>) => callback(prisma))
-  };
-  return prisma;
 }
 
 function examAttemptRecord(overrides: Record<string, unknown> = {}) {

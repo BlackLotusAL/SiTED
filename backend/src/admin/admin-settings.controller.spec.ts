@@ -1,9 +1,10 @@
 import { INestApplication, Module, NestMiddleware } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { NextFunction, Request, Response } from "express";
+import { DbService } from "../db/db.service";
 import type { Role } from "../domain/constants";
 import { IdentityModule } from "../identity/identity.module";
-import { PrismaService } from "../prisma/prisma.service";
+import { drizzleMock } from "../testing/drizzle-mock";
 import { AdminSettingsController } from "./admin-settings.controller";
 import { AdminSettingsService } from "./admin-settings.service";
 
@@ -68,8 +69,8 @@ async function createApp(role: Role): Promise<INestApplication> {
     controllers: [AdminSettingsController],
     providers: [{ provide: AdminSettingsService, useValue: settingsService }]
   })
-    .overrideProvider(PrismaService)
-    .useValue(prismaMock())
+    .overrideProvider(DbService)
+    .useValue(drizzleMock().service)
     .compile();
   const app = moduleRef.createNestApplication();
   const middleware = new IdentityTestMiddleware(role);
@@ -89,16 +90,5 @@ async function fetchJson(app: INestApplication, path: string, init: { method?: s
   return {
     status: response.status,
     body: await response.json()
-  };
-}
-
-function prismaMock() {
-  return {
-    ipRoleBinding: {
-      findUnique: jest.fn().mockResolvedValue(null)
-    },
-    visitor: {
-      upsert: jest.fn().mockResolvedValue({})
-    }
   };
 }

@@ -4,9 +4,9 @@
 
 **Goal:** Build the SiTED P0 internal training platform from the finalized PRD and UI prototype.
 
-**Architecture:** Use a monorepo with `frontend/` for the React application and `backend/` for the NestJS API. PostgreSQL is the only database, Prisma owns schema and migrations, and the backend serves `/api/*` plus uploaded question images under `/uploads/*`.
+**Architecture:** Use a monorepo with `frontend/` for the React application and `backend/` for the NestJS API. PostgreSQL is the only database, Drizzle ORM owns schema and migrations, and the backend serves `/api/*` plus uploaded question images under `/uploads/*`.
 
-**Tech Stack:** React + Vite + TypeScript, NestJS + TypeScript, Prisma, PostgreSQL, Markdown rendering with sanitization and code highlighting, Vitest/Jest, Supertest, Playwright.
+**Tech Stack:** React + Vite + TypeScript, NestJS + TypeScript, Drizzle ORM, PostgreSQL, Markdown rendering with sanitization and code highlighting, Vitest/Jest, Supertest, Playwright.
 
 ---
 
@@ -88,14 +88,15 @@ Create the same domain constants on backend and frontend.
 - Modify: `.gitignore`
 
 - [ ] Create npm workspaces with `frontend` and `backend`.
-  - Root scripts must include `dev`, `build`, `test`, `lint`, `e2e`, `db:migrate`, `db:seed`.
+  - Root scripts must include `dev`, `build`, `test`, `lint`, `e2e`, `db:generate`, `db:migrate`, `db:seed`.
   - `dev` should run backend and frontend concurrently.
 - [ ] Scaffold the frontend with Vite React TypeScript.
   - Use `frontend/src` as the source root.
   - Use the existing prototype as the visual reference, not as production HTML.
 - [ ] Scaffold the backend with NestJS TypeScript.
   - Use `backend/src` as the source root.
-  - Put Prisma schema under `backend/prisma/schema.prisma`.
+  - Put Drizzle schema under `backend/src/db/schema.ts`.
+  - Put generated SQL migrations under `backend/drizzle/`.
 - [ ] Add local PostgreSQL configuration.
   - `docker-compose.yml` service name: `db`
   - Database: `sited`
@@ -114,19 +115,22 @@ Create the same domain constants on backend and frontend.
   - Run: `npm run build`
   - Expected: both workspaces compile or fail only on not-yet-implemented imports introduced by later tasks.
 
-## Task 2: Backend Domain Model And Prisma
+## Task 2: Backend Domain Model And Drizzle
 
 **Files:**
-- Create: `backend/prisma/schema.prisma`
+- Create: `backend/src/db/schema.ts`
+- Create: `backend/src/db/db.module.ts`
+- Create: `backend/src/db/db.service.ts`
+- Create: `backend/src/db/query-helpers.ts`
+- Create: `backend/drizzle.config.ts`
+- Create: `backend/drizzle/*.sql`
 - Create: `backend/src/domain/constants.ts`
 - Create: `backend/src/domain/labels.ts`
 - Create: `backend/src/domain/validation.ts`
-- Create: `backend/src/prisma/prisma.module.ts`
-- Create: `backend/src/prisma/prisma.service.ts`
 - Test: `backend/src/domain/validation.spec.ts`
 
-- [ ] Define Prisma enums for subject, language, level, question type, question status, role, exam status, audit action.
-- [ ] Define models:
+- [ ] Define Drizzle PostgreSQL enums for subject, language, level, question type, question status, role, exam status, audit action.
+- [ ] Define tables:
   - `Visitor`: `id`, `ip`, `firstSeenAt`, `lastSeenAt`
   - `IpRoleBinding`: `id`, `ip`, `role`, `description`, `permissions`, `createdAt`, `updatedAt`
   - `Question`: PRD fields including `sourceCode`, `stemMd`, `options`, `correctAnswers`, `explanationMd`, `memo`, `tags`, counters, status, creator IP, timestamps
@@ -144,8 +148,9 @@ Create the same domain constants on backend and frontend.
 - [ ] Write tests before implementation for valid combinations and answer validation.
   - Run: `npm run test --workspace backend -- validation`
   - Expected before implementation: fail because helpers are missing.
-- [ ] Implement helpers and Prisma module.
-- [ ] Run migration.
+- [ ] Implement helpers and Drizzle database module.
+- [ ] Generate and run migration.
+  - Run: `npm run db:generate`
   - Run: `npm run db:migrate`
   - Expected: database schema is created successfully.
 
@@ -418,7 +423,7 @@ Create the same domain constants on backend and frontend.
 ## Task 11: Seed Data And Local Verification
 
 **Files:**
-- Create: `backend/prisma/seed.ts`
+- Create: `backend/src/db/seed.ts`
 - Create: `backend/src/testing/fixtures.ts`
 - Create: `frontend/tests/e2e/*.spec.ts`
 - Modify: `package.json`

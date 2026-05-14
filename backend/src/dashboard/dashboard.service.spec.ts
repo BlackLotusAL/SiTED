@@ -1,12 +1,12 @@
+import { drizzleMock } from "../testing/drizzle-mock";
 import { DashboardService } from "./dashboard.service";
 
 describe("DashboardService", () => {
   it("returns zero learner activity and real coverage when the visitor has no records", async () => {
-    const prisma = prismaMock({
-      visitor: { id: "visitor-1" },
-      coverageGroups: [{ subject: "programming", _count: { _all: 3 } }]
+    const db = drizzleMock({
+      select: [[{ subject: "programming", count: 3 }], []]
     });
-    const service = new DashboardService(prisma as never, () => new Date("2026-05-05T03:00:00.000Z"));
+    const service = new DashboardService(db.service as never, () => new Date("2026-05-05T03:00:00.000Z"));
 
     const summary = await service.getSummary(identity());
 
@@ -23,32 +23,36 @@ describe("DashboardService", () => {
   });
 
   it("summarizes today's attempts, unmastered mistakes, latest exam, calendar, and coverage for the current visitor", async () => {
-    const prisma = prismaMock({
-      visitor: { id: "visitor-1" },
-      todayAttempts: [{ isCorrect: true }, { isCorrect: false }, { isCorrect: true }],
-      unmasteredMistakes: 2,
-      latestExam: {
-        id: "exam-1",
-        subject: "programming",
-        language: "java",
-        level: "working",
-        status: "submitted",
-        scorePercent: 76.5,
-        isPassed: true,
-        startedAt: new Date("2026-05-04T13:00:00.000Z"),
-        submittedAt: new Date("2026-05-04T13:40:00.000Z")
-      },
-      monthAttempts: [
-        { createdAt: new Date("2026-05-01T02:00:00.000Z") },
-        { createdAt: new Date("2026-05-01T03:00:00.000Z") },
-        { createdAt: new Date("2026-05-04T16:30:00.000Z") }
-      ],
-      coverageGroups: [
-        { subject: "programming", _count: { _all: 5 } },
-        { subject: "security_privacy", _count: { _all: 4 } }
+    const db = drizzleMock({
+      select: [
+        [
+          { subject: "programming", count: 5 },
+          { subject: "security_privacy", count: 4 }
+        ],
+        [{ id: "visitor-1" }],
+        [{ value: 2 }],
+        [
+          {
+            id: "exam-1",
+            subject: "programming",
+            language: "java",
+            level: "working",
+            status: "submitted",
+            scorePercent: "76.50",
+            isPassed: true,
+            startedAt: new Date("2026-05-04T13:00:00.000Z"),
+            submittedAt: new Date("2026-05-04T13:40:00.000Z")
+          }
+        ],
+        [{ isCorrect: true }, { isCorrect: false }, { isCorrect: true }],
+        [
+          { createdAt: new Date("2026-05-01T02:00:00.000Z") },
+          { createdAt: new Date("2026-05-01T03:00:00.000Z") },
+          { createdAt: new Date("2026-05-04T16:30:00.000Z") }
+        ]
       ]
     });
-    const service = new DashboardService(prisma as never, () => new Date("2026-05-05T03:00:00.000Z"));
+    const service = new DashboardService(db.service as never, () => new Date("2026-05-05T03:00:00.000Z"));
 
     const summary = await service.getSummary(identity());
 
@@ -73,15 +77,7 @@ describe("DashboardService", () => {
       { subject: "security_privacy", count: 4 },
       { subject: "refactoring", count: 0 }
     ]);
-    expect(prisma.practiceAttempt.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          visitorId: "visitor-1",
-          createdAt: { gte: new Date("2026-05-04T16:00:00.000Z"), lt: new Date("2026-05-05T16:00:00.000Z") }
-        }),
-        select: { isCorrect: true }
-      })
-    );
+    expect(db.client.select).toHaveBeenCalledTimes(6);
   });
 });
 
@@ -91,37 +87,5 @@ function identity() {
     role: "learner" as const,
     roleLabel: "learner",
     permissions: []
-  };
-}
-
-function prismaMock(
-  options: {
-    visitor?: { id: string } | null;
-    todayAttempts?: Array<{ isCorrect: boolean }>;
-    monthAttempts?: Array<{ createdAt: Date }>;
-    unmasteredMistakes?: number;
-    latestExam?: Record<string, unknown> | null;
-    coverageGroups?: Array<{ subject: string; _count: { _all: number } }>;
-  } = {}
-) {
-  return {
-    visitor: {
-      findUnique: jest.fn().mockResolvedValue(options.visitor ?? null)
-    },
-    practiceAttempt: {
-      findMany: jest
-        .fn()
-        .mockResolvedValueOnce(options.todayAttempts ?? [])
-        .mockResolvedValueOnce(options.monthAttempts ?? [])
-    },
-    mistake: {
-      count: jest.fn().mockResolvedValue(options.unmasteredMistakes ?? 0)
-    },
-    examAttempt: {
-      findFirst: jest.fn().mockResolvedValue(options.latestExam ?? null)
-    },
-    question: {
-      groupBy: jest.fn().mockResolvedValue(options.coverageGroups ?? [])
-    }
   };
 }

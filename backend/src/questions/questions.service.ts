@@ -1,6 +1,9 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, type Question } from "@prisma/client";
-import { PrismaService } from "../prisma/prisma.service";
+import { and, arrayContains, count, desc, eq, ilike, or, type SQL } from "drizzle-orm";
+import { DbService } from "../db/db.service";
+import { isUniqueViolation } from "../db/query-helpers";
+import { questions, type QuestionRecord } from "../db/schema";
+import type { InputJsonValue, JsonValue } from "../db/json";
 import { MarkdownService } from "./markdown.service";
 import { normalizeQuestionInput, normalizeTags, type NormalizedQuestionInput, type QuestionOptionInput } from "./question-validator";
 import {
@@ -27,8 +30,8 @@ export interface QuestionListQuery {
 @Injectable()
 export class QuestionsService {
   constructor(
-    @Inject(PrismaService)
-    private readonly prisma: PrismaService,
+    @Inject(DbService)
+    private readonly db: DbService,
     @Inject(MarkdownService)
     private readonly markdown: MarkdownService
   ) {}
@@ -36,13 +39,8 @@ export class QuestionsService {
   async listPublic(query: QuestionListQuery) {
     const { where, page, pageSize, skip, take } = this.buildListInput(query, "published");
     const [items, total] = await Promise.all([
-      this.prisma.question.findMany({
-        where,
-        orderBy: { updatedAt: "desc" },
-        skip,
-        take
-      }),
-      this.prisma.question.count({ where })
+      this.db.client.select().from(questions).where(where).orderBy(desc(questions.updatedAt)).offset(skip).limit(take),
+      this.countQuestions(where)
     ]);
 
     return {
@@ -54,7 +52,7 @@ export class QuestionsService {
   }
 
   async getPublicDetail(id: string) {
-    const question = await this.prisma.question.findFirst({ where: { id, status: "published" } });
+    const question = await this.findQuestion(and(eq(questions.id, id), eq(questions.status, "published")));
     if (question === null) {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
@@ -63,7 +61,7 @@ export class QuestionsService {
   }
 
   async getReciteDetail(id: string) {
-    const question = await this.prisma.question.findFirst({ where: { id, status: "published" } });
+    const question = await this.findQuestion(and(eq(questions.id, id), eq(questions.status, "published")));
     if (question === null) {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
@@ -75,13 +73,8 @@ export class QuestionsService {
     const status = isValidQuestionStatus(query.status) ? query.status : undefined;
     const { where, page, pageSize, skip, take } = this.buildListInput(query, status);
     const [items, total] = await Promise.all([
-      this.prisma.question.findMany({
-        where,
-        orderBy: { updatedAt: "desc" },
-        skip,
-        take
-      }),
-      this.prisma.question.count({ where })
+      this.db.client.select().from(questions).where(where).orderBy(desc(questions.updatedAt)).offset(skip).limit(take),
+      this.countQuestions(where)
     ]);
 
     return {
@@ -93,7 +86,7 @@ export class QuestionsService {
   }
 
   async getAdminDetail(id: string) {
-    const question = await this.prisma.question.findUnique({ where: { id } });
+    const question = await this.findQuestion(eq(questions.id, id));
     if (question === null) {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
@@ -103,64 +96,77 @@ export class QuestionsService {
 
   async createAdmin(input: unknown, createdByIp: string) {
     const normalized = normalizeQuestionInput(input);
-    const question = await this.mapPrismaWriteErrors(() =>
-      this.prisma.question.create({
-        data: {
-          ...this.toQuestionData(normalized),
-          createdByIp
-        }
-      })
+    const question = await this.mapDbWriteErrors(async () =>
+      firstQuestion(
+        await this.db.client
+          .insert(questions)
+          .values({
+            ...this.toQuestionData(normalized),
+            createdByIp,
+            updatedAt: new Date()
+          })
+          .returning()
+      )
     );
 
     return this.toAdminDetail(question);
   }
 
   async updateAdmin(id: string, input: unknown) {
-    const current = await this.prisma.question.findUnique({ where: { id } });
+    const current = await this.findQuestion(eq(questions.id, id));
     if (current === null) {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
 
     const patch = typeof input === "object" && input !== null ? input : {};
     const normalized = normalizeQuestionInput({ ...current, ...patch }, current.status);
-    const question = await this.mapPrismaWriteErrors(() =>
-      this.prisma.question.update({
-        where: { id },
-        data: this.toQuestionData(normalized)
-      })
+    const question = await this.mapDbWriteErrors(async () =>
+      firstQuestion(
+        await this.db.client
+          .update(questions)
+          .set({ ...this.toQuestionData(normalized), updatedAt: new Date() })
+          .where(eq(questions.id, id))
+          .returning()
+      )
     );
 
     return this.toAdminDetail(question);
   }
 
   async publishAdmin(id: string) {
-    const current = await this.prisma.question.findUnique({ where: { id } });
+    const current = await this.findQuestion(eq(questions.id, id));
     if (current === null) {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
     normalizeQuestionInput(current, "published");
 
-    const question = await this.mapPrismaWriteErrors(() =>
-      this.prisma.question.update({
-        where: { id },
-        data: { status: "published" }
-      })
+    const question = await this.mapDbWriteErrors(async () =>
+      firstQuestion(
+        await this.db.client
+          .update(questions)
+          .set({ status: "published", updatedAt: new Date() })
+          .where(eq(questions.id, id))
+          .returning()
+      )
     );
 
     return this.toAdminDetail(question);
   }
 
   async archiveAdmin(id: string) {
-    const current = await this.prisma.question.findUnique({ where: { id } });
+    const current = await this.findQuestion(eq(questions.id, id));
     if (current === null) {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
 
-    const question = await this.mapPrismaWriteErrors(() =>
-      this.prisma.question.update({
-        where: { id },
-        data: { status: "archived" }
-      })
+    const question = await this.mapDbWriteErrors(async () =>
+      firstQuestion(
+        await this.db.client
+          .update(questions)
+          .set({ status: "archived", updatedAt: new Date() })
+          .where(eq(questions.id, id))
+          .returning()
+      )
     );
 
     return this.toAdminDetail(question);
@@ -169,42 +175,45 @@ export class QuestionsService {
   buildListInput(query: QuestionListQuery, forcedStatus?: QuestionStatus) {
     const page = clampInt(query.page, 1, 100000, 1);
     const pageSize = clampInt(query.pageSize, 1, 100, 20);
-    const where: Prisma.QuestionWhereInput = {};
+    const filters: SQL[] = [];
 
     if (forcedStatus !== undefined) {
-      where.status = forcedStatus;
+      filters.push(eq(questions.status, forcedStatus));
     }
     if (isValidSubject(query.subject)) {
-      where.subject = query.subject;
+      filters.push(eq(questions.subject, query.subject));
     }
     if (isValidLanguage(query.language)) {
-      where.language = query.language;
+      filters.push(eq(questions.language, query.language));
     }
     if (isValidLevel(query.level)) {
-      where.level = query.level;
+      filters.push(eq(questions.level, query.level));
     }
     if (isValidQuestionType(query.type)) {
-      where.type = query.type;
+      filters.push(eq(questions.type, query.type));
     }
 
     const tags = parseTagsQuery(query.tags);
     if (tags.length > 0) {
-      where.tags = { hasEvery: tags };
+      filters.push(arrayContains(questions.tags, tags));
     }
 
     const keyword = typeof query.keyword === "string" ? query.keyword.trim() : "";
     if (keyword.length > 0) {
-      where.OR = [
-        { stemMd: { contains: keyword, mode: "insensitive" } },
-        { explanationMd: { contains: keyword, mode: "insensitive" } },
-        { memo: { contains: keyword, mode: "insensitive" } },
-        { sourceCode: { contains: keyword, mode: "insensitive" } },
-        { tags: { has: keyword } }
-      ];
+      const pattern = `%${keyword}%`;
+      filters.push(
+        or(
+          ilike(questions.stemMd, pattern),
+          ilike(questions.explanationMd, pattern),
+          ilike(questions.memo, pattern),
+          ilike(questions.sourceCode, pattern),
+          arrayContains(questions.tags, [keyword])
+        )!
+      );
     }
 
     return {
-      where,
+      where: filters.length > 0 ? and(...filters) : undefined,
       page,
       pageSize,
       skip: (page - 1) * pageSize,
@@ -212,7 +221,7 @@ export class QuestionsService {
     };
   }
 
-  private toQuestionData(question: NormalizedQuestionInput): Omit<Prisma.QuestionUncheckedCreateInput, "createdByIp"> {
+  private toQuestionData(question: NormalizedQuestionInput) {
     return {
       sourceCode: question.sourceCode,
       subject: question.subject,
@@ -220,13 +229,23 @@ export class QuestionsService {
       level: question.level,
       type: question.type,
       stemMd: question.stemMd,
-      options: question.options as unknown as Prisma.InputJsonValue,
+      options: question.options as unknown as InputJsonValue,
       correctAnswers: question.correctAnswers,
       explanationMd: question.explanationMd,
       memo: question.memo,
       tags: question.tags,
       status: question.status
     };
+  }
+
+  private async findQuestion(where: SQL | undefined): Promise<QuestionRecord | null> {
+    const rows = await this.db.client.select().from(questions).where(where).limit(1);
+    return rows[0] ?? null;
+  }
+
+  private async countQuestions(where: SQL | undefined): Promise<number> {
+    const rows = await this.db.client.select({ value: count() }).from(questions).where(where);
+    return rows[0]?.value ?? 0;
   }
 
   private toListItem(question: QuestionRecord) {
@@ -314,27 +333,30 @@ export class QuestionsService {
     };
   }
 
-  private async mapPrismaWriteErrors<T>(operation: () => Promise<T>): Promise<T> {
+  private async mapDbWriteErrors<T>(operation: () => Promise<T>): Promise<T> {
     try {
       return await operation();
     } catch (error) {
-      if (isPrismaErrorCode(error, "P2002")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException({
           code: "QUESTION_SOURCE_CODE_CONFLICT",
           message: "Question sourceCode already exists"
         });
-      }
-      if (isPrismaErrorCode(error, "P2025")) {
-        throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
       }
       throw error;
     }
   }
 }
 
-type QuestionRecord = Question;
+function firstQuestion(rows: QuestionRecord[]): QuestionRecord {
+  const question = rows[0];
+  if (question === undefined) {
+    throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
+  }
+  return question;
+}
 
-function publicOptions(options: Prisma.JsonValue): Array<{ key: string; text: string }> {
+function publicOptions(options: JsonValue): Array<{ key: string; text: string }> {
   if (!Array.isArray(options)) {
     return [];
   }
@@ -372,8 +394,4 @@ function clampInt(value: string | number | undefined, min: number, max: number, 
     return fallback;
   }
   return Math.min(Math.max(parsed, min), max);
-}
-
-function isPrismaErrorCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === code;
 }

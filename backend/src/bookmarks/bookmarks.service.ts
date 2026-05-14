@@ -1,63 +1,73 @@
 import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
+import { DbService } from "../db/db.service";
+import { bookmarks, questions, visitors } from "../db/schema";
 import type { RequestIdentity } from "../identity/identity.service";
-import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
 export class BookmarksService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(@Inject(DbService) private readonly db: DbService) {}
 
   async add(questionId: string, identity: RequestIdentity) {
     await this.ensurePublishedQuestion(questionId);
     const visitor = await this.requireVisitor(identity);
 
-    const bookmark = await this.prisma.bookmark.upsert({
-      where: { visitorId_questionId: { visitorId: visitor.id, questionId } },
-      create: { visitorId: visitor.id, questionId },
-      update: {}
-    });
+    const [bookmark] = await this.db.client
+      .insert(bookmarks)
+      .values({ visitorId: visitor.id, questionId, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [bookmarks.visitorId, bookmarks.questionId],
+        set: { updatedAt: new Date() }
+      })
+      .returning();
 
-    return toBookmarkResponse(bookmark);
+    return toBookmarkResponse(requireBookmark(bookmark));
   }
 
   async remove(questionId: string, identity: RequestIdentity) {
     const visitor = await this.requireVisitor(identity);
 
-    const result = await this.prisma.bookmark.deleteMany({ where: { visitorId: visitor.id, questionId } });
-    return { deleted: result.count > 0 };
+    const deleted = await this.db.client
+      .delete(bookmarks)
+      .where(and(eq(bookmarks.visitorId, visitor.id), eq(bookmarks.questionId, questionId)))
+      .returning({ id: bookmarks.id });
+    return { deleted: deleted.length > 0 };
   }
 
   async update(questionId: string, input: unknown, identity: RequestIdentity) {
     const visitor = await this.requireVisitor(identity);
     const data = normalizeBookmarkUpdateInput(input);
 
-    const result = await this.prisma.bookmark.updateMany({
-      where: { visitorId: visitor.id, questionId },
-      data
-    });
-    if (result.count === 0) {
+    const updated = await this.db.client
+      .update(bookmarks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(bookmarks.visitorId, visitor.id), eq(bookmarks.questionId, questionId)))
+      .returning();
+    if (updated.length === 0) {
       throw new NotFoundException({ code: "BOOKMARK_NOT_FOUND", message: "Bookmark was not found" });
     }
 
-    const bookmark = await this.prisma.bookmark.findUnique({
-      where: { visitorId_questionId: { visitorId: visitor.id, questionId } }
-    });
-    if (bookmark === null) {
-      throw new NotFoundException({ code: "BOOKMARK_NOT_FOUND", message: "Bookmark was not found" });
-    }
-
-    return toBookmarkResponse(bookmark);
+    return toBookmarkResponse(requireBookmark(updated[0]));
   }
 
   private async ensurePublishedQuestion(questionId: string): Promise<void> {
-    const question = await this.prisma.question.findFirst({ where: { id: questionId, status: "published" } });
-    if (question === null) {
+    const [question] = await this.db.client
+      .select({ id: questions.id })
+      .from(questions)
+      .where(and(eq(questions.id, questionId), eq(questions.status, "published")))
+      .limit(1);
+    if (question === undefined) {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
   }
 
   private async requireVisitor(identity: RequestIdentity): Promise<{ id: string }> {
-    const visitor = await this.prisma.visitor.findUnique({ where: { ip: identity.ip }, select: { id: true } });
-    if (visitor === null) {
+    const [visitor] = await this.db.client
+      .select({ id: visitors.id })
+      .from(visitors)
+      .where(eq(visitors.ip, identity.ip))
+      .limit(1);
+    if (visitor === undefined) {
       throw new InternalServerErrorException({ code: "VISITOR_NOT_FOUND", message: "Request visitor was not found" });
     }
     return visitor;
@@ -112,6 +122,13 @@ function normalizeBookmarkUpdateInput(input: unknown): { note?: string | null; t
 
 function invalidBookmarkUpdate(message: string): BadRequestException {
   return new BadRequestException({ code: "INVALID_BOOKMARK_UPDATE", message });
+}
+
+function requireBookmark<T>(bookmark: T | undefined): T {
+  if (bookmark === undefined) {
+    throw new NotFoundException({ code: "BOOKMARK_NOT_FOUND", message: "Bookmark was not found" });
+  }
+  return bookmark;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

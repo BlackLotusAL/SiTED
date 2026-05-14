@@ -8,11 +8,11 @@
 
 零摩擦接入 · IP 即身份 · 刷题复习闭环 · 题库管理
 
-[![Backend Tests](https://img.shields.io/badge/backend%20tests-148%20passing-success)](backend/src)
+[![Backend Tests](https://img.shields.io/badge/backend%20tests-142%20passing-success)](backend/src)
 [![Frontend Tests](https://img.shields.io/badge/frontend%20tests-77%20passing-success)](frontend/src)
 [![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
-[![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![Drizzle](https://img.shields.io/badge/Drizzle-ORM-C5F74F?logo=drizzle&logoColor=black)](https://orm.drizzle.team/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](#-许可证)
 
@@ -251,10 +251,13 @@ VITE_API_BASE_URL=/api
 | 仅启动后端 | `npm run dev:backend` | `npm.cmd run dev:backend` |
 | 仅启动前端 | `npm run dev:frontend` | `npm.cmd run dev:frontend` |
 | 构建所有工作区 | `npm run build` | `npm.cmd run build` |
-| 执行 Prisma 数据库迁移 | `npm run db:migrate` | `npm.cmd run db:migrate` |
+| 生成 Drizzle SQL migration | `npm run db:generate` | `npm.cmd run db:generate` |
+| 执行 Drizzle 数据库迁移 | `npm run db:migrate` | `npm.cmd run db:migrate` |
 | 写入确定性的本地开发数据 | `npm run db:seed` | `npm.cmd run db:seed` |
 | 创建 PR | `npm run pr:github` | `npm.cmd run pr:github` |
 | 创建 PR 并 rebase 合并 | `npm run pr:github:rebase` | `npm.cmd run pr:github:rebase` |
+
+本地首次准备数据库时，请先确保目标 PostgreSQL 库为空或已清空 `public` schema，再执行 `npm run db:migrate` 和 `npm run db:seed`。
 
 种子数据会创建确定性的 `SITED-SEED*` 题目、访问者、角色绑定、训练记录、考试记录和审计日志。重复执行种子脚本会更新种子脚本拥有的数据，不会清空无关的本地数据。
 
@@ -286,7 +289,7 @@ PR 自动化脚本位于 `scripts/github-pr.ps1`。它要求当前分支不是 `
 
 <ul>
   <li>🔥 <a href="https://nestjs.com/"><strong>NestJS 11</strong></a> · API 服务</li>
-  <li>🐘 <a href="https://www.prisma.io/"><strong>Prisma 6</strong></a> · 类型安全 ORM 与迁移</li>
+  <li>🐘 <a href="https://orm.drizzle.team/"><strong>Drizzle ORM</strong></a> · 类型安全 ORM 与 SQL migration</li>
   <li>🗄️ <a href="https://www.postgresql.org/"><strong>PostgreSQL 16</strong></a> · 业务数据存储</li>
   <li>🔷 <a href="https://www.typescriptlang.org/"><strong>TypeScript 5</strong></a> · 服务端领域模型约束</li>
   <li>✅ <a href="https://jestjs.io/"><strong>Jest</strong></a> · 后端单元与集成测试</li>
@@ -302,8 +305,9 @@ PR 自动化脚本位于 `scripts/github-pr.ps1`。它要求当前分支不是 `
 
 ```text
 SiTED/
-├── backend/                 # 后端接口、Prisma 模型、迁移和种子数据
-│   ├── prisma/              # 数据模型、迁移和 seed 脚本
+├── backend/                 # 后端接口、Drizzle schema、迁移和种子数据
+│   ├── drizzle/             # Drizzle SQL migration
+│   ├── src/db/              # Drizzle schema、连接和 seed 脚本
 │   └── src/                 # NestJS 模块、控制器和服务
 ├── frontend/                # 前端应用、页面组件和端到端检查
 │   └── src/                 # 路由、页面、组件、接口封装和样式

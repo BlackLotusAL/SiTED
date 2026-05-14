@@ -7,19 +7,18 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "jest --passWithNoTests",
     "lint": "eslint .",
-    "db:migrate": "node --env-file=../.env ../node_modules/prisma/build/index.js migrate dev --schema prisma/schema.prisma",
-    "db:seed": "node --env-file=../.env ../node_modules/prisma/build/index.js db seed --schema prisma/schema.prisma"
-  },
-  "prisma": {
-    "seed": "node --env-file=../.env ../node_modules/tsx/dist/cli.mjs prisma/seed.ts"
+    "db:generate": "node ../node_modules/drizzle-kit/bin.cjs generate --config drizzle.config.ts",
+    "db:migrate": "node --env-file=../.env ../node_modules/drizzle-kit/bin.cjs migrate --config drizzle.config.ts",
+    "db:seed": "node --env-file=../.env ../node_modules/tsx/dist/cli.mjs src/db/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
-    "@prisma/client": "^6.1.0",
+    "drizzle-orm": "^0.36.4",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.1",
+    "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sanitize-html": "^2.17.3"
@@ -32,11 +31,12 @@
     "@types/markdown-it": "^14.1.2",
     "@types/multer": "^2.1.0",
     "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
     "@types/sanitize-html": "^2.16.1",
+    "drizzle-kit": "^0.28.1",
     "eslint": "^9.17.0",
     "globals": "^15.14.0",
     "jest": "^29.7.0",
-    "prisma": "^6.1.0",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
     "tsx": "^4.19.2",

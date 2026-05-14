@@ -1,8 +1,10 @@
 import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { Prisma, type Mistake } from "@prisma/client";
+import { and, eq, gte, sql } from "drizzle-orm";
+import { DbService } from "../db/db.service";
+import { SERIALIZABLE_ISOLATION, type DbExecutor, withSerializableRetry } from "../db/query-helpers";
+import { mistakes, practiceAttempts, questions, visitors, type MistakeRecord } from "../db/schema";
 import { isCorrectAnswer, isValidQuestionAnswerDefinition } from "../domain/validation";
 import type { RequestIdentity } from "../identity/identity.service";
-import { PrismaService } from "../prisma/prisma.service";
 
 export interface PracticeSubmitInput {
   questionId?: unknown;
@@ -17,7 +19,7 @@ export interface MasteryStatus {
   color: "danger" | "warning" | "success";
 }
 
-type TransactionLike = Prisma.TransactionClient;
+type TransactionLike = DbExecutor;
 
 type NormalizedPracticeSubmitInput = {
   questionId: string;
@@ -40,7 +42,7 @@ const MAX_DURATION_SEC = 2147483647;
 
 @Injectable()
 export class PracticeService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(@Inject(DbService) private readonly db: DbService) {}
 
   async submit(input: unknown, identity: RequestIdentity) {
     const normalized = normalizeSubmitInput(input);
@@ -48,13 +50,17 @@ export class PracticeService {
   }
 
   private async submitInTransaction(tx: TransactionLike, normalized: NormalizedPracticeSubmitInput, identity: RequestIdentity) {
-    const visitor = await tx.visitor.findUnique({ where: { ip: identity.ip }, select: { id: true } });
-    if (visitor === null) {
+    const [visitor] = await tx.select({ id: visitors.id }).from(visitors).where(eq(visitors.ip, identity.ip)).limit(1);
+    if (visitor === undefined) {
       throw new InternalServerErrorException({ code: "VISITOR_NOT_FOUND", message: "Request visitor was not found" });
     }
 
-    const question = await tx.question.findFirst({ where: { id: normalized.questionId, status: "published" } });
-    if (question === null) {
+    const [question] = await tx
+      .select()
+      .from(questions)
+      .where(and(eq(questions.id, normalized.questionId), eq(questions.status, "published")))
+      .limit(1);
+    if (question === undefined) {
       throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
     }
 
@@ -67,31 +73,33 @@ export class PracticeService {
       submittedAnswers: normalized.submittedAnswers
     });
 
-    const attempt = await tx.practiceAttempt.create({
-      data: {
+    const [attempt] = await tx
+      .insert(practiceAttempts)
+      .values({
         visitorId: visitor.id,
         questionId: question.id,
         selectedKeys: normalized.submittedAnswers,
         isCorrect,
         mode: "practice",
         durationSec: normalized.durationSec
-      }
-    });
+      })
+      .returning();
 
-    await tx.question.update({
-      where: { id: question.id },
-      data: {
-        totalAttempts: { increment: 1 },
-        correctAttempts: { increment: isCorrect ? 1 : 0 }
-      }
-    });
+    await tx
+      .update(questions)
+      .set({
+        totalAttempts: sql`${questions.totalAttempts} + 1`,
+        correctAttempts: sql`${questions.correctAttempts} + ${isCorrect ? 1 : 0}`,
+        updatedAt: new Date()
+      })
+      .where(eq(questions.id, question.id));
 
     const mistake = isCorrect
       ? await this.recordCorrectAnswer(tx, visitor.id, question.id)
       : await this.recordWrongAnswer(tx, visitor.id, question.id);
 
     return {
-      attemptId: attempt.id,
+      attemptId: requireAttempt(attempt).id,
       questionId: question.id,
       submittedAnswers: normalized.submittedAnswers,
       correctAnswers: question.correctAnswers,
@@ -103,61 +111,87 @@ export class PracticeService {
   }
 
   private async withSerializableRetry<T>(operation: (tx: TransactionLike) => Promise<T>): Promise<T> {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        return await this.prisma.$transaction((tx) => operation(tx), {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable
-        });
-      } catch (error) {
-        if (!isSerializableConflict(error)) {
-          throw error;
-        }
-        lastError = error;
-      }
-    }
-
-    throw lastError;
+    return withSerializableRetry(() =>
+      this.db.client.transaction((tx) => operation(tx), {
+        isolationLevel: SERIALIZABLE_ISOLATION
+      })
+    );
   }
 
-  private async recordWrongAnswer(tx: TransactionLike, visitorId: string, questionId: string): Promise<Mistake> {
+  private async recordWrongAnswer(tx: TransactionLike, visitorId: string, questionId: string): Promise<MistakeRecord> {
     const now = new Date();
-    return tx.mistake.upsert({
-      where: { visitorId_questionId: { visitorId, questionId } },
-      create: {
+    const [mistake] = await tx
+      .insert(mistakes)
+      .values({
         visitorId,
         questionId,
         wrongCount: 1,
         consecutiveCorrectCount: 0,
         isMastered: false,
         lastWrongAt: now,
-        masteredAt: null
-      },
-      update: {
-        wrongCount: { increment: 1 },
-        consecutiveCorrectCount: 0,
-        isMastered: false,
-        lastWrongAt: now,
-        masteredAt: null
-      }
-    });
+        masteredAt: null,
+        updatedAt: now
+      })
+      .onConflictDoUpdate({
+        target: [mistakes.visitorId, mistakes.questionId],
+        set: {
+          wrongCount: sql`${mistakes.wrongCount} + 1`,
+          consecutiveCorrectCount: 0,
+          isMastered: false,
+          lastWrongAt: now,
+          masteredAt: null,
+          updatedAt: now
+        }
+      })
+      .returning();
+    return requireMistake(mistake);
   }
 
-  private async recordCorrectAnswer(tx: TransactionLike, visitorId: string, questionId: string): Promise<Mistake | null> {
-    const incremented = await tx.mistake.updateMany({
-      where: { visitorId, questionId, isMastered: false },
-      data: { consecutiveCorrectCount: { increment: 1 } }
-    });
+  private async recordCorrectAnswer(tx: TransactionLike, visitorId: string, questionId: string): Promise<MistakeRecord | null> {
+    const incremented = await tx
+      .update(mistakes)
+      .set({
+        consecutiveCorrectCount: sql`${mistakes.consecutiveCorrectCount} + 1`,
+        updatedAt: new Date()
+      })
+      .where(and(eq(mistakes.visitorId, visitorId), eq(mistakes.questionId, questionId), eq(mistakes.isMastered, false)))
+      .returning({ id: mistakes.id });
 
-    if (incremented.count > 0) {
-      await tx.mistake.updateMany({
-        where: { visitorId, questionId, isMastered: false, consecutiveCorrectCount: { gte: 3 } },
-        data: { isMastered: true, masteredAt: new Date() }
-      });
+    if (incremented.length > 0) {
+      await tx
+        .update(mistakes)
+        .set({ isMastered: true, masteredAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(mistakes.visitorId, visitorId),
+            eq(mistakes.questionId, questionId),
+            eq(mistakes.isMastered, false),
+            gte(mistakes.consecutiveCorrectCount, 3)
+          )
+        );
     }
 
-    return tx.mistake.findUnique({ where: { visitorId_questionId: { visitorId, questionId } } });
+    const [mistake] = await tx
+      .select()
+      .from(mistakes)
+      .where(and(eq(mistakes.visitorId, visitorId), eq(mistakes.questionId, questionId)))
+      .limit(1);
+    return mistake ?? null;
   }
+}
+
+function requireMistake(mistake: MistakeRecord | undefined): MistakeRecord {
+  if (mistake === undefined) {
+    throw new InternalServerErrorException({ code: "MISTAKE_WRITE_FAILED", message: "Mistake write did not return a row" });
+  }
+  return mistake;
+}
+
+function requireAttempt(attempt: { id: string } | undefined): { id: string } {
+  if (attempt === undefined) {
+    throw new InternalServerErrorException({ code: "PRACTICE_ATTEMPT_WRITE_FAILED", message: "Practice attempt write did not return a row" });
+  }
+  return attempt;
 }
 
 function normalizeSubmitInput(input: unknown): NormalizedPracticeSubmitInput {
@@ -244,10 +278,6 @@ function invalidSubmission(message: string): BadRequestException {
   return new BadRequestException({ code: "INVALID_PRACTICE_SUBMISSION", message });
 }
 
-function isSerializableConflict(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2034";
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -264,7 +294,7 @@ function hasUniqueValues(values: string[]): boolean {
   return new Set(values).size === values.length;
 }
 
-export function toMasteryStatus(mistake: Pick<Mistake, "isMastered" | "consecutiveCorrectCount">): MasteryStatus {
+export function toMasteryStatus(mistake: Pick<MistakeRecord, "isMastered" | "consecutiveCorrectCount">): MasteryStatus {
   if (mistake.isMastered) {
     return { code: "mastered", label: "\u5df2\u638c\u63e1", color: "success" };
   }

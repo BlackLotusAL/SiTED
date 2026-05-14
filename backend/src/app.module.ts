@@ -12,12 +12,12 @@ import { IdentityMiddleware } from "./identity/identity.middleware";
 import { IdentityModule } from "./identity/identity.module";
 import { ExamsModule } from "./exams/exams.module";
 import { PracticeModule } from "./practice/practice.module";
-import { PrismaModule } from "./prisma/prisma.module";
+import { DbModule } from "./db/db.module";
 import { QuestionsModule } from "./questions/questions.module";
 import { ReviewModule } from "./review/review.module";
 
 @Module({
-  imports: [PrismaModule, IdentityModule, QuestionsModule, PracticeModule, ReviewModule, ExamsModule],
+  imports: [DbModule, IdentityModule, QuestionsModule, PracticeModule, ReviewModule, ExamsModule],
   controllers: [AppController, AdminStatsController, AdminSettingsController, DashboardController],
   providers: [AppService, AdminStatsService, AdminSettingsService, DashboardService, AuditService]
 })

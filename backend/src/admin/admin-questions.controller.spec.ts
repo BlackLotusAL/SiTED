@@ -2,10 +2,11 @@ import { INestApplication, Module, NestMiddleware } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { NextFunction, Request, Response } from "express";
 import { AuditService } from "../audit/audit.service";
+import { DbService } from "../db/db.service";
 import type { Role } from "../domain/constants";
 import { IdentityModule } from "../identity/identity.module";
-import { PrismaService } from "../prisma/prisma.service";
 import { QuestionsService } from "../questions/questions.service";
+import { drizzleMock } from "../testing/drizzle-mock";
 import { AdminQuestionsController } from "./admin-questions.controller";
 import { ImportExportService } from "./import-export.service";
 
@@ -94,8 +95,8 @@ async function createApp(
       { provide: AuditService, useValue: auditService }
     ]
   })
-    .overrideProvider(PrismaService)
-    .useValue(prismaMock())
+    .overrideProvider(DbService)
+    .useValue(drizzleMock().service)
     .compile();
   const app = moduleRef.createNestApplication();
   app.use(new IdentityTestMiddleware(role).use.bind(new IdentityTestMiddleware(role)));
@@ -133,16 +134,5 @@ function importExportServiceMock() {
     validateImport: jest.fn().mockResolvedValue({ valid: false, errors: [] }),
     commitImport: jest.fn().mockResolvedValue({ importedCount: 0 }),
     exportQuestions: jest.fn().mockResolvedValue({ version: "1.0", questions: [] })
-  };
-}
-
-function prismaMock() {
-  return {
-    ipRoleBinding: {
-      findUnique: jest.fn().mockResolvedValue(null)
-    },
-    visitor: {
-      upsert: jest.fn().mockResolvedValue({})
-    }
   };
 }

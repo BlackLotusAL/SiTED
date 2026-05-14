@@ -1,10 +1,13 @@
 import { BadRequestException, Inject, Injectable, Optional } from "@nestjs/common";
+import { count, desc, eq } from "drizzle-orm";
 import { rm } from "node:fs/promises";
 import { resolve, sep } from "node:path";
+import { DbService } from "../db/db.service";
+import type { DbExecutor } from "../db/query-helpers";
+import { auditLogs, bookmarks, examAttempts, ipRoleBindings, mistakes, practiceAttempts, questions } from "../db/schema";
 import type { Role } from "../domain/constants";
 import { parseCsv, normalizeIpv4 } from "../identity/ip-resolver";
 import { permissionsForRole, type Permission } from "../identity/permissions";
-import { PrismaService } from "../prisma/prisma.service";
 import { resolveUploadRoot } from "../uploads/uploads.service";
 import { AuditService, type AuditActor } from "../audit/audit.service";
 
@@ -48,17 +51,17 @@ export class AdminSettingsService {
   private readonly audit: AuditService;
 
   constructor(
-    @Inject(PrismaService)
-    private readonly prisma: PrismaService,
+    @Inject(DbService)
+    private readonly db: DbService,
     @Optional() @Inject(AuditService) audit?: AuditService,
     @Optional() @Inject(QUESTION_UPLOAD_REMOVER) private readonly removeUploads: QuestionUploadRemover = removeQuestionUploads
   ) {
-    this.audit = audit ?? new AuditService(prisma);
+    this.audit = audit ?? new AuditService(db);
   }
 
   async listRoleBindings() {
     const [bindings, systemAdminIps] = await Promise.all([
-      this.prisma.ipRoleBinding.findMany({ orderBy: [{ updatedAt: "desc" }, { ip: "asc" }] }),
+      this.db.client.select().from(ipRoleBindings).orderBy(desc(ipRoleBindings.updatedAt), ipRoleBindings.ip),
       Promise.resolve(systemAdminIpList())
     ]);
 
@@ -90,21 +93,26 @@ export class AdminSettingsService {
   async upsertRoleBinding(input: unknown, actor: AuditActor) {
     const normalized = normalizeRoleBindingInput(input);
     rejectEnvSystemAdminIp(normalized.ip);
-    const binding = await this.prisma.$transaction(async (tx) => {
-      const saved = await tx.ipRoleBinding.upsert({
-        where: { ip: normalized.ip },
-        create: {
+    const binding = await this.db.client.transaction(async (tx) => {
+      const [saved] = await tx
+        .insert(ipRoleBindings)
+        .values({
           ip: normalized.ip,
           role: normalized.role,
           note: normalized.description,
-          updatedByIp: actor.ip
-        },
-        update: {
-          role: normalized.role,
-          note: normalized.description,
-          updatedByIp: actor.ip
-        }
-      });
+          updatedByIp: actor.ip,
+          updatedAt: new Date()
+        })
+        .onConflictDoUpdate({
+          target: ipRoleBindings.ip,
+          set: {
+            role: normalized.role,
+            note: normalized.description,
+            updatedByIp: actor.ip,
+            updatedAt: new Date()
+          }
+        })
+        .returning();
 
       await this.audit.record(
         {
@@ -116,7 +124,7 @@ export class AdminSettingsService {
         tx
       );
 
-      return saved;
+      return requireRow(saved, "Role binding write did not return a row");
     });
 
     return roleBindingItem({
@@ -131,8 +139,8 @@ export class AdminSettingsService {
   async deleteRoleBinding(ipInput: string, actor: AuditActor) {
     const ip = normalizeIp(ipInput);
     rejectEnvSystemAdminIp(ip);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.ipRoleBinding.deleteMany({ where: { ip } });
+    await this.db.client.transaction(async (tx) => {
+      await tx.delete(ipRoleBindings).where(eq(ipRoleBindings.ip, ip));
       await this.audit.record(
         {
           actor,
@@ -150,12 +158,8 @@ export class AdminSettingsService {
     const page = clampInt(query.page, 1, 100000, 1);
     const pageSize = clampInt(query.pageSize, 1, 100, 50);
     const [items, total] = await Promise.all([
-      this.prisma.auditLog.findMany({
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize
-      }),
-      this.prisma.auditLog.count()
+      this.db.client.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).offset((page - 1) * pageSize).limit(pageSize),
+      countAuditLogs(this.db.client)
     ]);
 
     return { items, total, page, pageSize };
@@ -197,17 +201,17 @@ export class AdminSettingsService {
     const detail = { scope: normalized.scope, result, ...dbDetail, ...fileDetail };
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      await this.db.client.transaction(async (tx) => {
         if (normalized.scope === "activity" || normalized.scope === "all") {
           await deleteActivity(tx);
         }
         if (normalized.scope === "questions") {
           await deleteQuestionBoundRecords(tx);
-          await tx.question.deleteMany();
+          await tx.delete(questions);
         }
         if (normalized.scope === "all") {
-          await tx.question.deleteMany();
-          await tx.ipRoleBinding.deleteMany();
+          await tx.delete(questions);
+          await tx.delete(ipRoleBindings);
         }
         await this.audit.record(
           {
@@ -285,26 +289,17 @@ function normalizeClearInput(input: unknown): { scope: ClearScope; confirmationP
   };
 }
 
-async function deleteActivity(tx: {
-  bookmark: { deleteMany: () => Promise<unknown> };
-  mistake: { deleteMany: () => Promise<unknown> };
-  practiceAttempt: { deleteMany: () => Promise<unknown> };
-  examAttempt: { deleteMany: () => Promise<unknown> };
-}): Promise<void> {
-  await tx.bookmark.deleteMany();
-  await tx.mistake.deleteMany();
-  await tx.practiceAttempt.deleteMany();
-  await tx.examAttempt.deleteMany();
+async function deleteActivity(tx: DbExecutor): Promise<void> {
+  await tx.delete(bookmarks);
+  await tx.delete(mistakes);
+  await tx.delete(practiceAttempts);
+  await tx.delete(examAttempts);
 }
 
-async function deleteQuestionBoundRecords(tx: {
-  bookmark: { deleteMany: () => Promise<unknown> };
-  mistake: { deleteMany: () => Promise<unknown> };
-  practiceAttempt: { deleteMany: () => Promise<unknown> };
-}): Promise<void> {
-  await tx.bookmark.deleteMany();
-  await tx.mistake.deleteMany();
-  await tx.practiceAttempt.deleteMany();
+async function deleteQuestionBoundRecords(tx: DbExecutor): Promise<void> {
+  await tx.delete(bookmarks);
+  await tx.delete(mistakes);
+  await tx.delete(practiceAttempts);
 }
 
 async function removeQuestionUploads(): Promise<void> {
@@ -366,4 +361,16 @@ function errorMessage(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function countAuditLogs(db: DbExecutor): Promise<number> {
+  const rows = await db.select({ value: count() }).from(auditLogs);
+  return rows[0]?.value ?? 0;
+}
+
+function requireRow<T>(row: T | undefined, message: string): T {
+  if (row === undefined) {
+    throw new Error(message);
+  }
+  return row;
 }

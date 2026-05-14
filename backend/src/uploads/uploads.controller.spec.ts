@@ -2,8 +2,9 @@ import { INestApplication, Module, NestMiddleware } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { NextFunction, Request, Response } from "express";
 import { AuditService } from "../audit/audit.service";
+import { DbService } from "../db/db.service";
 import { IdentityModule } from "../identity/identity.module";
-import { PrismaService } from "../prisma/prisma.service";
+import { drizzleMock } from "../testing/drizzle-mock";
 import { UploadsController } from "./uploads.controller";
 import { UploadsService } from "./uploads.service";
 
@@ -66,8 +67,8 @@ async function createApp(
       { provide: AuditService, useValue: auditService }
     ]
   })
-    .overrideProvider(PrismaService)
-    .useValue(prismaMock())
+    .overrideProvider(DbService)
+    .useValue(drizzleMock().service)
     .compile();
   const app = moduleRef.createNestApplication();
   app.use(new IdentityTestMiddleware(role).use.bind(new IdentityTestMiddleware(role)));
@@ -87,16 +88,5 @@ async function postUpload(app: INestApplication): Promise<{ status: number; body
   return {
     status: response.status,
     body: await response.json()
-  };
-}
-
-function prismaMock() {
-  return {
-    ipRoleBinding: {
-      findUnique: jest.fn().mockResolvedValue(null)
-    },
-    visitor: {
-      upsert: jest.fn().mockResolvedValue({})
-    }
   };
 }

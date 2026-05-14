@@ -1,7 +1,8 @@
 import { Controller, Get, INestApplication, InternalServerErrorException, Module } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AppModule } from "../app.module";
-import { PrismaService } from "../prisma/prisma.service";
+import { DbService } from "../db/db.service";
+import { drizzleMock } from "../testing/drizzle-mock";
 import { IdentityController } from "./identity.controller";
 import { IdentityModule } from "./identity.module";
 import { Roles } from "./roles.guard";
@@ -61,16 +62,16 @@ describe("identity integration", () => {
 
   it("does not run identity middleware for non-API routes", async () => {
     process.env.ALLOWED_CIDR = "10.0.0.0/8";
-    const prisma = prismaMock();
-    const app = await createApp(prisma);
+    const db = drizzleMock();
+    const app = await createApp(db);
 
     try {
       const response = await fetchJson(app, "/non-api");
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ ok: true });
-      expect(prisma.ipRoleBinding.findUnique).not.toHaveBeenCalled();
-      expect(prisma.visitor.upsert).not.toHaveBeenCalled();
+      expect(db.client.select).not.toHaveBeenCalled();
+      expect(db.client.insert).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -114,12 +115,12 @@ class GuardController {
 })
 class GuardTestModule {}
 
-async function createApp(prisma = prismaMock()): Promise<INestApplication> {
+async function createApp(db = drizzleMock({ insert: [[]] })): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule]
   })
-    .overrideProvider(PrismaService)
-    .useValue(prisma)
+    .overrideProvider(DbService)
+    .useValue(db.service)
     .compile();
   const app = moduleRef.createNestApplication();
   app.setGlobalPrefix("api");
@@ -134,8 +135,8 @@ async function createGuardApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [GuardTestModule]
   })
-    .overrideProvider(PrismaService)
-    .useValue(prismaMock())
+    .overrideProvider(DbService)
+    .useValue(drizzleMock().service)
     .compile();
   const app = moduleRef.createNestApplication();
   await app.listen(0);
@@ -148,16 +149,5 @@ async function fetchJson(app: INestApplication, path: string): Promise<{ status:
   return {
     status: response.status,
     body: await response.json()
-  };
-}
-
-function prismaMock() {
-  return {
-    ipRoleBinding: {
-      findUnique: jest.fn().mockResolvedValue(null)
-    },
-    visitor: {
-      upsert: jest.fn().mockResolvedValue({})
-    }
   };
 }

@@ -1,7 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { eq } from "drizzle-orm";
+import { DbService } from "../db/db.service";
+import { ipRoleBindings, visitors } from "../db/schema";
 import type { Role } from "../domain/constants";
 import { getRoleLabel } from "../domain/labels";
-import { PrismaService } from "../prisma/prisma.service";
 import { normalizeIpv4, parseCsv } from "./ip-resolver";
 import { permissionsForRole, type Permission } from "./permissions";
 
@@ -16,7 +18,7 @@ export interface RequestIdentity {
 
 @Injectable()
 export class IdentityService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(@Inject(DbService) private readonly db: DbService) {}
 
   async resolveIdentity(ip: string): Promise<RequestIdentity> {
     const role = await this.resolveRole(ip);
@@ -35,20 +37,23 @@ export class IdentityService {
       return "system_admin";
     }
 
-    const binding = await this.prisma.ipRoleBinding.findUnique({
-      where: { ip },
-      select: { role: true }
-    });
+    const [binding] = await this.db.client
+      .select({ role: ipRoleBindings.role })
+      .from(ipRoleBindings)
+      .where(eq(ipRoleBindings.ip, ip))
+      .limit(1);
 
-    return binding === null ? "learner" : ipRoleBindingRoleToRole(binding.role);
+    return binding === undefined ? "learner" : ipRoleBindingRoleToRole(binding.role);
   }
 
   private async upsertVisitor(ip: string): Promise<void> {
-    await this.prisma.visitor.upsert({
-      where: { ip },
-      create: { ip },
-      update: { lastSeenAt: new Date() }
-    });
+    await this.db.client
+      .insert(visitors)
+      .values({ ip })
+      .onConflictDoUpdate({
+        target: visitors.ip,
+        set: { lastSeenAt: new Date() }
+      });
   }
 
   private systemAdminIps(): Set<string> {
