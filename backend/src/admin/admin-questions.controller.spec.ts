@@ -31,6 +31,7 @@ describe("AdminQuestionsController HTTP", () => {
     try {
       expect((await fetchJson(app, "/api/admin/questions?status=draft")).status).toBe(200);
       expect((await fetchJson(app, "/api/admin/questions/q1", { method: "PATCH", body: { memo: "new" } })).status).toBe(200);
+      expect((await fetchJson(app, "/api/admin/questions/q1", { method: "DELETE" })).status).toBe(200);
       expect((await fetchJson(app, "/api/admin/questions/q1/publish", { method: "POST" })).status).toBe(201);
       expect((await fetchJson(app, "/api/admin/questions/q1/archive", { method: "POST" })).status).toBe(201);
       expect((await fetchJson(app, "/api/admin/questions/import/validate", { method: "POST", body: { version: "1.0", questions: [] } })).status).toBe(201);
@@ -39,6 +40,7 @@ describe("AdminQuestionsController HTTP", () => {
 
       expect(questionsService.listAdmin).toHaveBeenCalledWith(expect.objectContaining({ status: "draft" }));
       expect(questionsService.updateAdmin).toHaveBeenCalledWith("q1", { memo: "new" });
+      expect(questionsService.deleteAdmin).toHaveBeenCalledWith("q1");
       expect(questionsService.publishAdmin).toHaveBeenCalledWith("q1");
       expect(questionsService.archiveAdmin).toHaveBeenCalledWith("q1");
       expect(importExportService.commitImport).toHaveBeenCalledWith(expect.anything(), {
@@ -62,6 +64,27 @@ describe("AdminQuestionsController HTTP", () => {
       expect(response.body).toEqual({ id: "q1" });
       expect(questionsService.updateAdmin).toHaveBeenCalledWith("q1", { memo: "new" });
       expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: "question_update", target: "q1" }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("does not fail successful hard deletes when best-effort audit logging fails", async () => {
+    const questionsService = questionsServiceMock();
+    const auditService = { record: jest.fn().mockRejectedValue(new Error("audit down")) };
+    const app = await createApp("content_admin", questionsService, importExportServiceMock(), auditService);
+
+    try {
+      const response = await fetchJson(app, "/api/admin/questions/q1", { method: "DELETE" });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        deleted: true,
+        id: "q1",
+        deletedRecords: { bookmarks: 2, mistakes: 1, practiceAttempts: 3 }
+      });
+      expect(questionsService.deleteAdmin).toHaveBeenCalledWith("q1");
+      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: "question_delete", target: "q1" }));
     } finally {
       await app.close();
     }
@@ -124,6 +147,11 @@ function questionsServiceMock() {
     createAdmin: jest.fn().mockResolvedValue({ id: "q1" }),
     getAdminDetail: jest.fn().mockResolvedValue({ id: "q1" }),
     updateAdmin: jest.fn().mockResolvedValue({ id: "q1" }),
+    deleteAdmin: jest.fn().mockResolvedValue({
+      deleted: true,
+      id: "q1",
+      deletedRecords: { bookmarks: 2, mistakes: 1, practiceAttempts: 3 }
+    }),
     publishAdmin: jest.fn().mockResolvedValue({ id: "q1", status: "published" }),
     archiveAdmin: jest.fn().mockResolvedValue({ id: "q1", status: "archived" })
   };

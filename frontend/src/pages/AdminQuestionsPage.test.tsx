@@ -6,15 +6,44 @@ import { AdminQuestionsPage } from "./AdminQuestionsPage";
 
 vi.mock("../api/client", () => ({
   apiClient: {
-    post: vi.fn()
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn()
   }
 }));
 
 describe("AdminQuestionsPage", () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.post).mockReset();
-    vi.mocked(apiClient.post).mockResolvedValue({ id: "q-created", status: "published" });
+    vi.mocked(apiClient.patch).mockReset();
+    vi.mocked(apiClient.delete).mockReset();
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/admin/questions/q-admin-1") {
+        return adminDetail();
+      }
+      if (path.startsWith("/admin/questions?")) {
+        return { items: [adminListItem()], page: 1, pageSize: 100, total: 1 };
+      }
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+    vi.mocked(apiClient.post).mockImplementation(async (path: string) => {
+      if (path === "/admin/questions/import/validate") {
+        return { valid: true, importableCount: 1, failedCount: 0, errors: [] };
+      }
+      if (path === "/admin/questions/import/commit") {
+        return { importedCount: 1 };
+      }
+      return { id: "q-created", status: "published" };
+    });
+    vi.mocked(apiClient.patch).mockResolvedValue(adminDetail({ memo: "updated memo" }));
+    vi.mocked(apiClient.delete).mockResolvedValue({
+      deleted: true,
+      id: "q-admin-1",
+      deletedRecords: { bookmarks: 0, mistakes: 0, practiceAttempts: 0 }
+    });
   });
 
   afterEach(() => {
@@ -30,6 +59,71 @@ describe("AdminQuestionsPage", () => {
 
     const preview = screen.getByLabelText("实时预览");
     expect(within(preview).getByText("A. CopyOnWriteArrayList")).toBeInTheDocument();
+  });
+
+  it("loads the admin question list with all filters and saves edits for an existing question", async () => {
+    render(<AdminQuestionsPage />);
+
+    expect(await screen.findByText("Admin list question")).toBeInTheDocument();
+    const listRequest = vi.mocked(apiClient.get).mock.calls.find(([path]) => path.startsWith("/admin/questions?"))?.[0] ?? "";
+    const params = new URL(listRequest, "http://local").searchParams;
+    expect(params.get("subject")).toBeNull();
+    expect(params.get("language")).toBeNull();
+    expect(params.get("level")).toBeNull();
+    expect(params.get("type")).toBeNull();
+    expect(params.get("status")).toBeNull();
+
+    fireEvent.click(screen.getByText("Admin list question"));
+    expect(await screen.findByDisplayValue("Admin detail question")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("备注"), { target: { value: "updated memo" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith("/admin/questions/q-admin-1", expect.objectContaining({ memo: "updated memo" })));
+    expect(await screen.findByRole("status")).toHaveTextContent("题目已保存");
+  });
+
+  it("hard deletes an existing question after confirmation", async () => {
+    render(<AdminQuestionsPage />);
+
+    fireEvent.click(await screen.findByText("Admin list question"));
+    await screen.findByDisplayValue("Admin detail question");
+    fireEvent.click(screen.getByRole("button", { name: "删除题目" }));
+
+    const confirmation = await screen.findByRole("alert");
+    expect(confirmation).toHaveTextContent("会删除该题及关联的收藏、错题和练习记录");
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith("/admin/questions/q-admin-1"));
+    expect(await screen.findByRole("status")).toHaveTextContent("题目已删除");
+  });
+
+  it("validates a JSON import file before committing published import", async () => {
+    render(<AdminQuestionsPage />);
+
+    const file = new File([JSON.stringify({ version: "1.0", questions: [validImportQuestion()] })], "questions.json", {
+      type: "application/json"
+    });
+    fireEvent.change(screen.getByLabelText("批量导入题目"), { target: { files: [file] } });
+
+    expect(await screen.findByText("可导入 1 题，失败 0 题")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认导入" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "确认导入" }));
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith("/admin/questions/import/commit", expect.objectContaining({ version: "1.0" })));
+    expect(await screen.findByRole("status")).toHaveTextContent("已导入 1 题并发布");
+  });
+
+  it("renders fenced code blocks in option preview", () => {
+    render(<AdminQuestionsPage />);
+
+    fireEvent.change(screen.getByLabelText("A 选项内容"), {
+      target: { value: "Use this:\n```java\nreturn cache.get(key);\n```" }
+    });
+
+    const preview = screen.getByLabelText("实时预览");
+    expect(within(preview).getByText("Use this:")).toBeInTheDocument();
+    expect(within(preview).getByText("return")).toHaveClass("token", "keyword");
+    expect(within(preview).getByText(/cache\.get/).closest("code")).not.toBeNull();
   });
 
   it("limits authoring language choices to P0 languages", () => {
@@ -221,4 +315,57 @@ function fillDefaultChoiceOptions() {
   fireEvent.change(screen.getByLabelText("B 选项内容"), { target: { value: "HashMap" } });
   fireEvent.change(screen.getByLabelText("C 选项内容"), { target: { value: "ConcurrentHashMap" } });
   fireEvent.change(screen.getByLabelText("D 选项内容"), { target: { value: "LinkedList" } });
+}
+
+function adminListItem() {
+  return {
+    id: "q-admin-1",
+    sourceCode: "ADM-1",
+    subject: "programming",
+    language: "java",
+    level: "working",
+    type: "single",
+    stemMd: "Admin list question",
+    memo: "memo",
+    tags: ["admin"],
+    totalAttempts: 0,
+    correctAttempts: 0,
+    correctRate: 0,
+    status: "published",
+    createdAt: "2026-05-05T00:00:00.000Z",
+    updatedAt: "2026-05-05T00:00:00.000Z"
+  };
+}
+
+function adminDetail(overrides: Record<string, unknown> = {}) {
+  return {
+    ...adminListItem(),
+    stemMd: "Admin detail question",
+    stemHtml: "<p>Admin detail question</p>",
+    options: [
+      { key: "A", text: "ArrayList", isCorrect: false },
+      { key: "B", text: "ConcurrentHashMap", isCorrect: true },
+      { key: "C", text: "HashMap", isCorrect: false }
+    ],
+    correctAnswers: ["B"],
+    explanationMd: "Use ConcurrentHashMap.",
+    explanationHtml: "<p>Use ConcurrentHashMap.</p>",
+    ...overrides
+  };
+}
+
+function validImportQuestion() {
+  return {
+    sourceCode: "IMPORT-1",
+    subject: "programming",
+    language: "java",
+    level: "working",
+    type: "single",
+    stemMd: "Imported question",
+    options: [
+      { key: "A", text: "A", isCorrect: true },
+      { key: "B", text: "B", isCorrect: false }
+    ],
+    explanationMd: "Imported explanation"
+  };
 }

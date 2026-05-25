@@ -12,6 +12,7 @@ export type AuditAction =
   | "question_update"
   | "question_publish"
   | "question_archive"
+  | "question_delete"
   | "question_import"
   | "question_export"
   | "question_upload"

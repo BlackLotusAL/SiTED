@@ -4,6 +4,8 @@ import type { QuestionDetail } from "../api/types";
 import { getLanguageLabel, getLevelLabel, getQuestionTypeLabel, getSubjectLabel, type Language, type Level, type QuestionType, type Subject } from "../domain/labels";
 import { BookmarkStateIcon } from "./BookmarkStateIcon";
 import { LoadingSkeleton } from "./LoadingSkeleton";
+import { OptionContent } from "./MarkdownEditor";
+import { hasMarkdownCode } from "./markdownContent";
 
 export interface QuestionPreviewProps {
   detail?: QuestionDetail | null;
@@ -45,7 +47,14 @@ export function QuestionPreview({ detail, loading = false, isBookmarked = false,
       <div className="preview-options">
         {detail.options.map((option) => (
           <div className="preview-option" key={option.key}>
-            {option.key}. {option.text}
+            {hasMarkdownCode(option.text) ? (
+              <>
+                <span>{option.key}.</span>
+                <OptionContent value={option.text} />
+              </>
+            ) : (
+              `${option.key}. ${option.text}`
+            )}
           </div>
         ))}
       </div>

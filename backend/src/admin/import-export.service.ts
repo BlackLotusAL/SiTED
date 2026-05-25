@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, type SQL } from "drizzle-orm";
 import { DbService } from "../db/db.service";
 import { isUniqueViolation } from "../db/query-helpers";
 import { auditLogs, questions } from "../db/schema";
@@ -100,8 +100,8 @@ export class ImportExportService {
           await tx.insert(questions).values({
               ...this.toQuestionData(question),
               createdByIp: actor.actorIp,
-            status: "draft",
-            updatedAt: new Date()
+              status: "published",
+              updatedAt: new Date()
           });
         }
 
@@ -176,7 +176,7 @@ export class ImportExportService {
       .select()
       .from(questions)
       .where(filters.length > 0 ? and(...filters) : undefined)
-      .orderBy(desc(questions.updatedAt));
+      .orderBy(desc(questions.updatedAt), asc(questions.id));
 
     return {
       version: "1.0",
@@ -226,7 +226,7 @@ export class ImportExportService {
       explanationMd: question.explanationMd,
       memo: question.memo,
       tags: question.tags,
-      status: "draft"
+      status: "published"
     };
   }
 

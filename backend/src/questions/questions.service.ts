@@ -1,8 +1,8 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, arrayContains, count, desc, eq, ilike, or, type SQL } from "drizzle-orm";
+import { and, arrayContains, asc, count, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 import { DbService } from "../db/db.service";
 import { isUniqueViolation } from "../db/query-helpers";
-import { questions, type QuestionRecord } from "../db/schema";
+import { bookmarks, mistakes, practiceAttempts, questions, type QuestionRecord } from "../db/schema";
 import type { InputJsonValue, JsonValue } from "../db/json";
 import { MarkdownService } from "./markdown.service";
 import { normalizeQuestionInput, normalizeTags, type NormalizedQuestionInput, type QuestionOptionInput } from "./question-validator";
@@ -39,7 +39,13 @@ export class QuestionsService {
   async listPublic(query: QuestionListQuery) {
     const { where, page, pageSize, skip, take } = this.buildListInput(query, "published");
     const [items, total] = await Promise.all([
-      this.db.client.select().from(questions).where(where).orderBy(desc(questions.updatedAt)).offset(skip).limit(take),
+      this.db.client
+        .select()
+        .from(questions)
+        .where(where)
+        .orderBy(desc(questions.updatedAt), asc(questions.id))
+        .offset(skip)
+        .limit(take),
       this.countQuestions(where)
     ]);
 
@@ -73,7 +79,13 @@ export class QuestionsService {
     const status = isValidQuestionStatus(query.status) ? query.status : undefined;
     const { where, page, pageSize, skip, take } = this.buildListInput(query, status);
     const [items, total] = await Promise.all([
-      this.db.client.select().from(questions).where(where).orderBy(desc(questions.updatedAt)).offset(skip).limit(take),
+      this.db.client
+        .select()
+        .from(questions)
+        .where(where)
+        .orderBy(desc(questions.updatedAt), asc(questions.id))
+        .offset(skip)
+        .limit(take),
       this.countQuestions(where)
     ]);
 
@@ -170,6 +182,33 @@ export class QuestionsService {
     );
 
     return this.toAdminDetail(question);
+  }
+
+  async deleteAdmin(id: string) {
+    return await this.db.client.transaction(async (tx) => {
+      const current = await tx.select({ id: questions.id }).from(questions).where(eq(questions.id, id)).limit(1);
+      if (current.length === 0) {
+        throw new NotFoundException({ code: "QUESTION_NOT_FOUND", message: "Question was not found" });
+      }
+
+      const deletedBookmarks = await tx.delete(bookmarks).where(eq(bookmarks.questionId, id)).returning({ id: bookmarks.id });
+      const deletedMistakes = await tx.delete(mistakes).where(eq(mistakes.questionId, id)).returning({ id: mistakes.id });
+      const deletedPracticeAttempts = await tx
+        .delete(practiceAttempts)
+        .where(eq(practiceAttempts.questionId, id))
+        .returning({ id: practiceAttempts.id });
+      await tx.delete(questions).where(eq(questions.id, id)).returning({ id: questions.id });
+
+      return {
+        deleted: true,
+        id,
+        deletedRecords: {
+          bookmarks: deletedBookmarks.length,
+          mistakes: deletedMistakes.length,
+          practiceAttempts: deletedPracticeAttempts.length
+        }
+      };
+    });
   }
 
   buildListInput(query: QuestionListQuery, forcedStatus?: QuestionStatus) {

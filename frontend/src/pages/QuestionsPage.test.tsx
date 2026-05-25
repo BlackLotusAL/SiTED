@@ -89,6 +89,64 @@ describe("QuestionsPage", () => {
     expect(within(preview).queryByText("正确答案")).not.toBeInTheDocument();
   });
 
+  it("deduplicates repeated question ids from paginated responses", async () => {
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/review/bookmarks") {
+        return { items: [] };
+      }
+      if (path === "/questions/q-1") {
+        return detail("q-1", "Real detail one", "First option");
+      }
+      if (path.startsWith("/questions?")) {
+        const params = new URL(path, "http://local").searchParams;
+        return {
+          items: [listItem("q-1", params.get("page") === "2" ? "Duplicate question one" : "Real question one")],
+          page: Number(params.get("page") ?? 1),
+          pageSize: 100,
+          total: 101
+        };
+      }
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+
+    renderQuestionsPage();
+
+    expect(await screen.findByText("Real question one")).toBeInTheDocument();
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining("page=2")));
+    expect(screen.queryByText("Duplicate question one")).not.toBeInTheDocument();
+  });
+
+  it("defaults every filter to all and omits all filter values from the request", async () => {
+    renderQuestionsPage();
+
+    expect(await screen.findByText("Real question one")).toBeInTheDocument();
+    expect(screen.getByLabelText("科目")).toHaveValue("all");
+    expect(screen.getByLabelText("语言")).toHaveValue("all");
+    expect(screen.getByLabelText("级别")).toHaveValue("all");
+    expect(screen.getByLabelText("题型")).toHaveValue("all");
+
+    const listRequest = vi.mocked(apiClient.get).mock.calls.find(([path]) => path.startsWith("/questions?"))?.[0] ?? "";
+    const params = new URL(listRequest, "http://local").searchParams;
+    expect(params.get("subject")).toBeNull();
+    expect(params.get("language")).toBeNull();
+    expect(params.get("level")).toBeNull();
+    expect(params.get("type")).toBeNull();
+  });
+
+  it("ignores the old v1 filter cache so legacy defaults do not override all", async () => {
+    localStorage.setItem(
+      "sited.questions.filters.v1",
+      JSON.stringify({ subject: "programming", language: "java", level: "working", type: "single", keyword: "legacy" })
+    );
+
+    renderQuestionsPage();
+
+    expect(await screen.findByText("Real question one")).toBeInTheDocument();
+    expect(screen.getByLabelText("科目")).toHaveValue("all");
+    expect(screen.getByLabelText("关键词")).toHaveValue("");
+    expect(localStorage.getItem("sited.questions.filters.v2")).toContain('"subject":"all"');
+  });
+
   it("persists filters locally and restores them after navigating away and back", async () => {
     const { unmount } = render(
       <MemoryRouter>
@@ -101,11 +159,11 @@ describe("QuestionsPage", () => {
     fireEvent.change(screen.getByLabelText("关键词"), { target: { value: "security" } });
 
     await waitFor(() =>
-      expect(localStorage.getItem("sited.questions.filters.v1")).toBe(
+      expect(localStorage.getItem("sited.questions.filters.v2")).toBe(
         JSON.stringify({
-          subject: "programming",
-          language: "java",
-          level: "working",
+          subject: "all",
+          language: "all",
+          level: "all",
           type: "multiple",
           keyword: "security"
         })
@@ -134,6 +192,7 @@ describe("QuestionsPage", () => {
 
     const languageSelect = screen.getByLabelText("语言");
     expect(within(languageSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "全部",
       "C",
       "C++",
       "Python",

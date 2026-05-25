@@ -82,6 +82,63 @@ export interface QuestionOption {
   text: string;
 }
 
+export interface AdminQuestionListResponse {
+  items: AdminQuestionListItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface AdminQuestionListItem extends QuestionListItem {
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminQuestionDetail extends AdminQuestionListItem {
+  stemHtml: string;
+  options: Array<QuestionOption & { isCorrect?: boolean }>;
+  correctAnswers: string[];
+  explanationMd: string | null;
+  explanationHtml: string;
+}
+
+export interface QuestionUpsertPayload {
+  sourceCode?: string;
+  subject: string;
+  language: string | null;
+  level: string;
+  type: string;
+  stemMd: string;
+  options: Array<{ key: string; text: string; isCorrect: boolean }>;
+  correctAnswers: string[];
+  explanationMd?: string;
+  memo?: string;
+  tags: string[];
+  status: string;
+}
+
+export interface ImportValidationReport {
+  valid: boolean;
+  importableCount: number;
+  failedCount: number;
+  errors: Array<{ row: number; field: string; message: string }>;
+}
+
+export interface ImportCommitResponse {
+  importedCount: number;
+}
+
+export interface AdminQuestionDeleteResponse {
+  deleted: boolean;
+  id: string;
+  deletedRecords: {
+    bookmarks: number;
+    mistakes: number;
+    practiceAttempts: number;
+  };
+}
+
 export interface PracticeSubmitResponse {
   attemptId: string;
   questionId: string;
