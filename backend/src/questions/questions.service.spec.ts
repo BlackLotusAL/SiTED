@@ -20,6 +20,10 @@ describe("QuestionsService", () => {
     });
 
     expect(db.client.select).toHaveBeenCalledTimes(2);
+    const listBuilder = db.client.select.mock.results[0]?.value as { orderBy: jest.Mock; offset: jest.Mock; limit: jest.Mock };
+    expect(listBuilder.orderBy).toHaveBeenCalledWith(expect.anything(), expect.anything());
+    expect(listBuilder.offset).toHaveBeenCalledWith(10);
+    expect(listBuilder.limit).toHaveBeenCalledWith(10);
     expect(result).toMatchObject({ page: 2, pageSize: 10, total: 1 });
     expect(result.items[0]).toMatchObject({
       id: "q1",
@@ -158,6 +162,32 @@ describe("QuestionsService", () => {
 
     await expect(service.publishAdmin("q1")).rejects.toThrow(NotFoundException);
     await expect(service.archiveAdmin("q1")).rejects.toThrow(NotFoundException);
+  });
+
+  it("hard deletes questions and direct linked records in one transaction", async () => {
+    const db = drizzleMock({
+      select: [[questionRecord({ id: "q1" })]],
+      delete: [[{ id: "b1" }, { id: "b2" }], [{ id: "m1" }], [{ id: "p1" }, { id: "p2" }, { id: "p3" }], [{ id: "q1" }]]
+    });
+    const service = new QuestionsService(db.service as never, markdownStub());
+
+    const result = await service.deleteAdmin("q1");
+
+    expect(db.client.transaction).toHaveBeenCalledWith(expect.any(Function));
+    expect(db.client.delete).toHaveBeenCalledTimes(4);
+    expect(result).toEqual({
+      deleted: true,
+      id: "q1",
+      deletedRecords: { bookmarks: 2, mistakes: 1, practiceAttempts: 3 }
+    });
+  });
+
+  it("rejects hard deletes for missing questions without deleting linked records", async () => {
+    const db = drizzleMock({ select: [[]] });
+    const service = new QuestionsService(db.service as never, markdownStub());
+
+    await expect(service.deleteAdmin("missing")).rejects.toThrow(NotFoundException);
+    expect(db.client.delete).not.toHaveBeenCalled();
   });
 });
 

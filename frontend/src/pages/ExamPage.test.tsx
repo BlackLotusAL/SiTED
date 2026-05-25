@@ -35,6 +35,22 @@ describe("ExamPage", () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 
+  it("defaults exam filters to all but requires a concrete source before starting", async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ items: [] });
+
+    renderExam();
+
+    expect(await screen.findByRole("heading", { name: "未启动模拟考" })).toBeInTheDocument();
+    expect(screen.getByLabelText("科目")).toHaveValue("all");
+    expect(screen.getByLabelText("语言")).toHaveValue("all");
+    expect(screen.getByLabelText("级别")).toHaveValue("all");
+
+    fireEvent.click(screen.getByRole("button", { name: "开始模拟考" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("请选择具体的科目、语言和级别后再开始模拟考");
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
   it("offers only P0 languages before starting an exam", async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ items: [] });
 
@@ -43,6 +59,7 @@ describe("ExamPage", () => {
     expect(await screen.findByRole("heading", { name: "未启动模拟考" })).toBeInTheDocument();
     const languageSelect = screen.getByLabelText("语言");
     expect(within(languageSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "全部",
       "C",
       "C++",
       "Python",
@@ -58,6 +75,9 @@ describe("ExamPage", () => {
 
     renderExam();
 
+    fireEvent.change(await screen.findByLabelText("科目"), { target: { value: "programming" } });
+    fireEvent.change(screen.getByLabelText("语言"), { target: { value: "java" } });
+    fireEvent.change(screen.getByLabelText("级别"), { target: { value: "working" } });
     fireEvent.click(await screen.findByRole("button", { name: "开始模拟考" }));
 
     await waitFor(() =>

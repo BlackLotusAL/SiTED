@@ -5,6 +5,10 @@ import { useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { PracticeSubmitResponse, QuestionDetail, QuestionListItem, QuestionListResponse, ReciteQuestionDetail } from "../api/types";
 import { LoadingSkeleton } from "../components/LoadingSkeleton";
+import { OptionContent } from "../components/MarkdownEditor";
+import { hasMarkdownCode, markdownToPlainText } from "../components/markdownContent";
+import { stripAllFilterValues } from "../domain/filtering";
+import { uniqueByQuestionId } from "../domain/questionLists";
 import {
   getLanguageLabel,
   getLevelLabel,
@@ -24,6 +28,7 @@ interface PracticeQuestionState {
   submission: PracticeSubmitResponse | null;
   isDirty: boolean;
   isSubmitting: boolean;
+  submitError: string | null;
 }
 
 export function PracticePage() {
@@ -91,7 +96,8 @@ export function PracticePage() {
         [currentQuestionId]: {
           ...existing,
           selectedKeys: nextSelectedKeys,
-          isDirty: existing.submission !== null ? existing.isDirty || selectionChanged : false
+          isDirty: existing.submission !== null ? existing.isDirty || selectionChanged : false,
+          submitError: selectionChanged ? null : existing.submitError
         }
       };
     });
@@ -109,7 +115,8 @@ export function PracticePage() {
       [questionIdForSubmit]: {
         ...(current[questionIdForSubmit] ?? emptyPracticeQuestionState()),
         selectedKeys: answersForSubmit,
-        isSubmitting: true
+        isSubmitting: true,
+        submitError: null
       }
     }));
 
@@ -126,7 +133,8 @@ export function PracticePage() {
           selectedKeys: result?.submittedAnswers ?? answersForSubmit,
           submission: result ?? null,
           isDirty: false,
-          isSubmitting: false
+          isSubmitting: false,
+          submitError: null
         }
       }));
       invalidateStaleResource("/dashboard");
@@ -138,10 +146,10 @@ export function PracticePage() {
         ...current,
         [questionIdForSubmit]: {
           ...(current[questionIdForSubmit] ?? emptyPracticeQuestionState()),
-          isSubmitting: false
+          isSubmitting: false,
+          submitError: practiceSubmitErrorMessage(error)
         }
       }));
-      throw error;
     }
   }
 
@@ -154,7 +162,8 @@ export function PracticePage() {
       selectedKeys: [],
       submission: null,
       isDirty: false,
-      isSubmitting: false
+      isSubmitting: false,
+      submitError: null
     };
   }
 
@@ -255,11 +264,16 @@ export function PracticePage() {
                 key={option.key}
               >
                 <span>{option.key}</span>
-                {option.text}
+                {hasMarkdownCode(option.text) ? <OptionContent value={option.text} /> : option.text}
               </motion.button>
             );
           })}
         </div>
+        {mode === "practice" && currentPracticeState?.submitError ? (
+          <p className="form-error practice-submit-error" role="alert">
+            {currentPracticeState.submitError}
+          </p>
+        ) : null}
         {mode === "practice" ? (
           <div className="practice-actions practice-answer-actions">
             {canNavigateSequence ? (
@@ -350,10 +364,10 @@ async function fetchAllQuestions(searchParams: URLSearchParams): Promise<Questio
   const firstPage = await fetchQuestionPage(searchParams, 1);
   const pageCount = Math.ceil(firstPage.total / PAGE_SIZE);
   if (pageCount <= 1) {
-    return firstPage.items;
+    return uniqueByQuestionId(firstPage.items);
   }
   const rest = await Promise.all(Array.from({ length: pageCount - 1 }, (_value, index) => fetchQuestionPage(searchParams, index + 2)));
-  return [firstPage, ...rest].flatMap((page) => page.items);
+  return uniqueByQuestionId([firstPage, ...rest].flatMap((page) => page.items));
 }
 
 async function fetchQuestionPage(searchParams: URLSearchParams, page: number): Promise<QuestionListResponse> {
@@ -366,13 +380,9 @@ async function fetchQuestionPage(searchParams: URLSearchParams, page: number): P
 }
 
 function practiceQuestionSearchParams(searchParams: URLSearchParams): URLSearchParams {
-  const params = new URLSearchParams(searchParams);
+  const params = stripAllFilterValues(new URLSearchParams(searchParams), ["subject", "language", "level", "type"]);
   params.delete("mode");
   params.delete("questionId");
-  if (!params.has("subject")) params.set("subject", "programming");
-  if (!params.has("language")) params.set("language", "java");
-  if (!params.has("level")) params.set("level", "working");
-  if (!params.has("type")) params.set("type", "single");
   params.set("page", "1");
   params.set("pageSize", String(PAGE_SIZE));
   return params;
@@ -389,11 +399,18 @@ function sourceLabel(subject: string, language: string | null, level: string): s
 }
 
 function getOptionLabel(key: string, text: string, selected: boolean, submitted: boolean, correct: boolean): string {
-  const parts = [`${key} ${text}`];
+  const parts = [`${key} ${markdownToPlainText(text) || text}`];
   if (selected) parts.push("已选择");
   if (submitted && correct) parts.push("正确答案");
   if (submitted && selected && !correct) parts.push("回答错误");
   return parts.join("，");
+}
+
+function practiceSubmitErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0 && error.message !== "Network request failed") {
+    return `提交失败，请稍后重试：${error.message}`;
+  }
+  return "提交失败，请稍后重试。";
 }
 
 function markdownParagraph(value: string | null): string {

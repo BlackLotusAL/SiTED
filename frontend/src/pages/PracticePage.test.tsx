@@ -72,6 +72,41 @@ describe("PracticePage", () => {
     expect(screen.getByRole("button", { name: /A Correct option.*正确答案/ })).toHaveClass("is-correct");
   });
 
+  it("loads all published questions by default without injecting source filters", async () => {
+    renderPractice("/practice");
+
+    expect(await screen.findByText("Practice question")).toBeInTheDocument();
+    const listRequest = vi.mocked(apiClient.get).mock.calls.find(([path]) => path.startsWith("/questions?"))?.[0] ?? "";
+    const params = new URL(listRequest, "http://local").searchParams;
+    expect(params.get("subject")).toBeNull();
+    expect(params.get("language")).toBeNull();
+    expect(params.get("level")).toBeNull();
+    expect(params.get("type")).toBeNull();
+    expect(params.get("page")).toBe("1");
+    expect(params.get("pageSize")).toBe("100");
+  });
+
+  it("shows an inline retryable error when practice submission fails", async () => {
+    vi.mocked(apiClient.post)
+      .mockRejectedValueOnce(new Error("backend down"))
+      .mockResolvedValueOnce(practiceSubmitResponse({ submittedAnswers: ["A"], isCorrect: true }));
+
+    renderPractice("/practice?subject=programming&language=java&level=working&type=single");
+
+    expect(await screen.findByText("Practice question")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /A Correct option/ }));
+    fireEvent.click(screen.getByRole("button", { name: "提交答案" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("提交失败，请稍后重试");
+    expect(screen.getByRole("button", { name: /A Correct option.*已选择/ })).toHaveClass("is-selected");
+
+    fireEvent.click(screen.getByRole("button", { name: "提交答案" }));
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("status")).toHaveTextContent("回答正确");
+  });
+
   it("allows incorrect practice answers to be changed and submitted again", async () => {
     vi.mocked(apiClient.post)
       .mockResolvedValueOnce(practiceSubmitResponse({ submittedAnswers: ["B"], isCorrect: false }))

@@ -5,6 +5,9 @@ import { useSearchParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { ExamDetail, ExamListResponse, ExamQuestion } from "../api/types";
 import { LoadingSkeleton } from "../components/LoadingSkeleton";
+import { OptionContent } from "../components/MarkdownEditor";
+import { hasMarkdownCode, markdownToPlainText } from "../components/markdownContent";
+import { ALL_FILTER_VALUE, type FilterValue } from "../domain/filtering";
 import {
   getLanguageLabel,
   getLevelLabel,
@@ -20,6 +23,7 @@ import { invalidateStaleResource, setStaleResourceData, useStaleResource } from 
 
 type ExamViewState = "loading" | "unstarted" | "answering" | "confirming" | "review" | "error";
 type ExamSource = { subject: Subject; language: Language | null; level: Level };
+type ExamSourceFilters = { subject: FilterValue<Subject>; language: FilterValue<Language>; level: FilterValue<Level> };
 
 export function ExamPage() {
   const [searchParams] = useSearchParams();
@@ -32,10 +36,11 @@ export function ExamPage() {
   const answersRef = useRef<Record<string, string[]>>({});
   const [flaggedQuestionIds, setFlaggedQuestionIds] = useState<Set<string>>(() => new Set());
   const [autosaveState, setAutosaveState] = useState("尚未保存");
-  const [source, setSource] = useState<{ subject: Subject; language: Language; level: Level }>({
-    subject: "programming",
-    language: "java",
-    level: "working"
+  const [startError, setStartError] = useState<string | null>(null);
+  const [source, setSource] = useState<ExamSourceFilters>({
+    subject: ALL_FILTER_VALUE,
+    language: ALL_FILTER_VALUE,
+    level: ALL_FILTER_VALUE
   });
 
   const initialExamResource = useStaleResource<ExamDetail | null>({
@@ -71,7 +76,12 @@ export function ExamPage() {
   }, [initialExamResource.data, initialExamResource.error]);
 
   async function startExam() {
-    await startExamWithSource(source);
+    if (source.subject === ALL_FILTER_VALUE || source.language === ALL_FILTER_VALUE || source.level === ALL_FILTER_VALUE) {
+      setStartError("请选择具体的科目、语言和级别后再开始模拟考。");
+      return;
+    }
+    setStartError(null);
+    await startExamWithSource({ subject: source.subject, language: source.language, level: source.level });
   }
 
   function restartExam() {
@@ -217,6 +227,11 @@ export function ExamPage() {
           <SelectField label="语言" value={source.language} values={LANGUAGES} formatter={(value) => getLanguageLabel(value)} onChange={(language) => setSource((current) => ({ ...current, language }))} />
           <SelectField label="级别" value={source.level} values={LEVELS} formatter={(value) => getLevelLabel(value)} onChange={(level) => setSource((current) => ({ ...current, level }))} />
         </div>
+        {startError ? (
+          <p className="form-error" role="alert">
+            {startError}
+          </p>
+        ) : null}
         <div className="button-row">
           <button className="primary-button" type="button" onClick={startExam}>
             开始模拟考
@@ -254,7 +269,7 @@ export function ExamPage() {
 
             return (
               <motion.button
-                aria-label={`${option.key} ${option.text}`}
+                aria-label={`${option.key} ${markdownToPlainText(option.text) || option.text}`}
                 className={className}
                 type="button"
                 whileHover={{ x: isReview ? 0 : 3 }}
@@ -263,7 +278,7 @@ export function ExamPage() {
                 key={option.key}
               >
                 <span>{option.key}</span>
-                {option.text}
+                {hasMarkdownCode(option.text) ? <OptionContent value={option.text} /> : option.text}
               </motion.button>
             );
           })}
@@ -433,15 +448,16 @@ function SelectField<TValue extends Subject | Language | Level>({
   onChange
 }: {
   label: string;
-  value: TValue;
+  value: FilterValue<TValue>;
   values: readonly TValue[];
   formatter: (value: TValue) => string;
-  onChange: (value: TValue) => void;
+  onChange: (value: FilterValue<TValue>) => void;
 }) {
   return (
     <label>
       {label}
-      <select value={value} onChange={(event) => onChange(event.target.value as TValue)}>
+      <select value={value} onChange={(event) => onChange(event.target.value as FilterValue<TValue>)}>
+        <option value={ALL_FILTER_VALUE}>全部</option>
         {values.map((item) => (
           <option value={item} key={item}>
             {formatter(item)}

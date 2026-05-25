@@ -75,7 +75,7 @@ describe("ImportExportService", () => {
     });
   });
 
-  it("imports a valid batch atomically with correctAnswers derived from options", async () => {
+  it("imports a valid batch atomically as published with correctAnswers derived from options", async () => {
     const db = drizzleMock({ select: [[]], insert: [[], []] });
     const service = new ImportExportService(db.service as never);
     const batch = { version: "1.0", questions: [validImportQuestion()] };
@@ -88,7 +88,7 @@ describe("ImportExportService", () => {
     expect(insertBuilder.values).toHaveBeenCalledWith(expect.objectContaining({
       correctAnswers: ["B"],
       createdByIp: "10.0.0.5",
-      status: "draft"
+      status: "published"
     }));
   });
 
@@ -114,6 +114,8 @@ describe("ImportExportService", () => {
 
     const exported = await service.exportQuestions({ subject: "programming", status: "published" });
 
+    const exportBuilder = db.client.select.mock.results[0]?.value as { orderBy: jest.Mock };
+    expect(exportBuilder.orderBy).toHaveBeenCalledWith(expect.anything(), expect.anything());
     expect(exported).toEqual({
       version: "1.0",
       questions: [

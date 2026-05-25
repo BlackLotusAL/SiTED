@@ -5,6 +5,7 @@ import { apiClient } from "../api/client";
 import type { QuestionDetail, QuestionListItem, QuestionListResponse, ReviewBookmarksResponse } from "../api/types";
 import { BookmarkStateIcon } from "../components/BookmarkStateIcon";
 import { LoadingSkeleton } from "../components/LoadingSkeleton";
+import { markdownToPlainText } from "../components/markdownContent";
 import { QuestionPreview } from "../components/QuestionPreview";
 import {
   getLanguageLabel,
@@ -20,24 +21,26 @@ import {
   type QuestionType,
   type Subject
 } from "../domain/labels";
+import { ALL_FILTER_VALUE, appendFilterParam, isFilterValue, type FilterValue } from "../domain/filtering";
 import { invalidateStaleResource, useStaleResource } from "../hooks/useStaleResource";
+import { uniqueByQuestionId } from "../domain/questionLists";
 
 const PAGE_SIZE = 100;
-const FILTER_STORAGE_KEY = "sited.questions.filters.v1";
+const FILTER_STORAGE_KEY = "sited.questions.filters.v2";
 
 interface QuestionFilters {
-  subject: Subject;
-  language: Language;
-  level: Level;
-  type: QuestionType;
+  subject: FilterValue<Subject>;
+  language: FilterValue<Language>;
+  level: FilterValue<Level>;
+  type: FilterValue<QuestionType>;
   keyword: string;
 }
 
 const DEFAULT_FILTERS: QuestionFilters = {
-  subject: "programming",
-  language: "java",
-  level: "working",
-  type: "single",
+  subject: ALL_FILTER_VALUE,
+  language: ALL_FILTER_VALUE,
+  level: ALL_FILTER_VALUE,
+  type: ALL_FILTER_VALUE,
   keyword: ""
 };
 
@@ -165,7 +168,7 @@ export function QuestionsPage() {
           {questionListResource.error && questionListResource.data === undefined ? <div className="panel" role="alert">题目加载失败，请稍后重试。</div> : null}
           {questionListResource.data !== undefined && questions.length === 0 ? <div className="panel">当前筛选条件下暂无已发布题目。</div> : null}
           {questions.map((question) => {
-            const summary = plainText(question.stemMd);
+            const summary = markdownToPlainText(question.stemMd);
             const isBookmarked = bookmarkedQuestionIds.has(question.id);
             const isBookmarking = bookmarkingQuestionIds.has(question.id);
             return (
@@ -231,15 +234,16 @@ function FilterSelect<TValue extends Subject | Language | Level | QuestionType>(
   onChange
 }: {
   label: string;
-  value: TValue;
+  value: FilterValue<TValue>;
   values: readonly TValue[];
   formatter: (value: TValue) => string;
-  onChange: (value: TValue) => void;
+  onChange: (value: FilterValue<TValue>) => void;
 }) {
   return (
     <label>
       {label}
-      <select value={value} onChange={(event) => onChange(event.target.value as TValue)}>
+      <select value={value} onChange={(event) => onChange(event.target.value as FilterValue<TValue>)}>
+        <option value={ALL_FILTER_VALUE}>全部</option>
         {values.map((item) => (
           <option value={item} key={item}>
             {formatter(item)}
@@ -256,11 +260,11 @@ async function fetchAllQuestions(filters: QuestionFilters): Promise<QuestionList
   const pageCount = Math.ceil(total / PAGE_SIZE);
 
   if (pageCount <= 1) {
-    return firstPage.items;
+    return uniqueByQuestionId(firstPage.items);
   }
 
   const rest = await Promise.all(Array.from({ length: pageCount - 1 }, (_value, index) => fetchQuestionPage(filters, index + 2)));
-  return [firstPage, ...rest].flatMap((page) => page.items);
+  return uniqueByQuestionId([firstPage, ...rest].flatMap((page) => page.items));
 }
 
 async function fetchQuestionPage(filters: QuestionFilters, page: number): Promise<QuestionListResponse> {
@@ -270,26 +274,18 @@ async function fetchQuestionPage(filters: QuestionFilters, page: number): Promis
 
 function filtersToSearchParams(filters: QuestionFilters, page = 1): URLSearchParams {
   const params = new URLSearchParams({
-    subject: filters.subject,
-    language: filters.language,
-    level: filters.level,
-    type: filters.type,
     page: String(page),
     pageSize: String(PAGE_SIZE)
   });
+  appendFilterParam(params, "subject", filters.subject);
+  appendFilterParam(params, "language", filters.language);
+  appendFilterParam(params, "level", filters.level);
+  appendFilterParam(params, "type", filters.type);
   const keyword = filters.keyword.trim();
   if (keyword.length > 0) {
     params.set("keyword", keyword);
   }
   return params;
-}
-
-function plainText(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[#>*_`~\-[\]]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function loadStoredFilters(): QuestionFilters {
@@ -312,14 +308,10 @@ function loadStoredFilters(): QuestionFilters {
 
 function isValidFilters(value: Partial<QuestionFilters>): value is QuestionFilters {
   return (
-    isOneOf(value.subject, SUBJECTS) &&
-    isOneOf(value.language, LANGUAGES) &&
-    isOneOf(value.level, LEVELS) &&
-    isOneOf(value.type, QUESTION_TYPES) &&
+    isFilterValue(value.subject, SUBJECTS) &&
+    isFilterValue(value.language, LANGUAGES) &&
+    isFilterValue(value.level, LEVELS) &&
+    isFilterValue(value.type, QUESTION_TYPES) &&
     typeof value.keyword === "string"
   );
-}
-
-function isOneOf<TValue extends string>(value: unknown, values: readonly TValue[]): value is TValue {
-  return typeof value === "string" && values.includes(value as TValue);
 }

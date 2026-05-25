@@ -29,6 +29,7 @@ export const AUDIT_ACTIONS = [
   "question_export",
   "question_upload",
   "question_archive",
+  "question_delete",
   "data_clear",
   "exam_abandon",
   "exam_config_reload"

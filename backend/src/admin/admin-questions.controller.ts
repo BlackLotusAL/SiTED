@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, InternalServerErrorException, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, InternalServerErrorException, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import type { Role } from "../domain/constants";
 import { AuditService } from "../audit/audit.service";
 import type { IdentityRequest } from "../identity/identity.middleware";
@@ -74,6 +74,19 @@ export class AdminQuestionsController {
       target: id
     });
     return question;
+  }
+
+  @Delete(":id")
+  async delete(@Param("id") id: string, @Req() request: IdentityRequest) {
+    const identity = requireIdentity(request);
+    const result = await this.questionsService.deleteAdmin(id);
+    await this.recordAudit({
+      actor: { ip: identity.ip, role: identity.role },
+      action: "question_delete",
+      target: id,
+      detail: result.deletedRecords
+    });
+    return result;
   }
 
   @Post(":id/publish")
